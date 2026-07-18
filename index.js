@@ -1,7 +1,7 @@
-require("dotenv").config();
-const express = require("express");
-const fs = require("fs");
-const { 
+import "dotenv/config";
+import express from "express";
+import fs from "fs";
+import { 
   Client, 
   GatewayIntentBits, 
   EmbedBuilder, 
@@ -9,10 +9,10 @@ const {
   Routes, 
   SlashCommandBuilder,
   ActivityType
-} = require("discord.js");
+} from "discord.js";
 
 /* ==========================================================
-   🌐 MANTER ONLINE (WEB SERVER REPLAY LINK)
+   🌐 MANTER ONLINE (WEB SERVER KEEP-ALIVE)
 ========================================================== */
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,7 +23,7 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 /* ==========================================================
-   🔑 CONFIGURAÇÕES DE CREDENCIAIS
+   🔑 CONFIGURAÇÕES DE CREDENCIAIS (VARIÁVEIS DE AMBIENTE)
 ========================================================== */
 const TOKEN = process.env.TOKEN || "SEU_DISCORD_TOKEN_AQUI";
 const CLIENT_ID = process.env.CLIENT_ID || "SEU_APPLICATION_CLIENT_ID";
@@ -51,6 +51,7 @@ if (fs.existsSync(DB_PATH)) {
   try {
     const fileContent = fs.readFileSync(DB_PATH, "utf-8");
     database = JSON.parse(fileContent);
+    // Garantir estrutura caso falte algo
     if (!database.cargos) {
       database.cargos = { Lider: [], Gerente: [], Elite: [], membros: [], Recruta: [] };
     }
@@ -71,7 +72,7 @@ function salvarBanco() {
   }
 }
 
-// Formatação Visual Oficial dos Cargos baseados na Imagem do Servidor
+// Formatação Visual Oficial dos Cargos (Idêntica ao Painel)
 const NOMES_CARGOS = {
   Lider: "☣️ **· Lider** 👑",
   Gerente: "☣️ **· Gerentes FiveZ**",
@@ -159,6 +160,7 @@ async function atualizarQuadro(guild) {
       }
     }
 
+    // Se não editou, envia uma nova mensagem
     const novaMsg = await canal.send({ embeds: [embed] });
     database.lastMessageId = novaMsg.id;
     salvarBanco();
@@ -262,10 +264,12 @@ client.on("interactionCreate", async interaction => {
     if (commandName === "addcargo") {
       if (!cargo) return;
 
+      // Remove o usuário de qualquer outro cargo antes para não duplicar
       Object.keys(database.cargos).forEach(k => {
         database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
       });
 
+      // Adiciona ao cargo novo se não existir
       if (!database.cargos[cargo]) {
         database.cargos[cargo] = [];
       }
@@ -277,6 +281,7 @@ client.on("interactionCreate", async interaction => {
         ephemeral: false
       });
 
+      // Atualiza o quadro fixado automaticamente
       if (guild) {
         await atualizarQuadro(guild);
       }
@@ -303,6 +308,7 @@ client.on("interactionCreate", async interaction => {
         ephemeral: false
       });
 
+      // Atualiza o quadro fixado automaticamente
       if (guild) {
         await atualizarQuadro(guild);
       }
