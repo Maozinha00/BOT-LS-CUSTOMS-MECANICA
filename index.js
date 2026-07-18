@@ -1,6 +1,16 @@
+/**
+ * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT ⚔️
+ * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
+ * 
+ * Este bot utiliza ES Modules (import) compatível com o "type": "module" do seu package.json.
+ * Ele possui persistência de dados local automática usando um arquivo JSON para não perder os membros cadastrados.
+ */
+
 import "dotenv/config";
 import express from "express";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { 
   Client, 
   GatewayIntentBits, 
@@ -8,8 +18,13 @@ import {
   REST, 
   Routes, 
   SlashCommandBuilder,
-  ActivityType
+  ActivityType,
+  TextChannel
 } from "discord.js";
+
+// Resolver __dirname no formato ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /* ==========================================================
    🌐 MANTER ONLINE (WEB SERVER KEEP-ALIVE)
@@ -17,23 +32,26 @@ import {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (_, res) => res.send("Bot Clã Hunters está Ativo! ⚔️"));
+app.get("/", (_, res) => {
+  res.send("🔥 Bot Clã Hunters está 100% Ativo e Online! ⚔️");
+});
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 Web server ativo de Keep-Alive na porta ${PORT}.`);
+  console.log(`🌐 Servidor Web Keep-Alive ativo na porta ${PORT}.`);
 });
 
 /* ==========================================================
    🔑 CONFIGURAÇÕES DE CREDENCIAIS (VARIÁVEIS DE AMBIENTE)
 ========================================================== */
-const TOKEN = process.env.TOKEN || "SEU_DISCORD_TOKEN_AQUI";
-const CLIENT_ID = process.env.CLIENT_ID || "1499078466862317740";
-const GUILD_ID = process.env.GUILD_ID || "1456655598031601727";
-const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // ID do canal do Quadro
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // Canal do Quadro de Cargos
 
 /* ==========================================================
-   🗄️ PERSISTÊNCIA DE DADOS (BANCO DE DADOS EM ARQUIVO JSON)
+   💾 PERSISTÊNCIA DE DADOS (Banco de dados local em arquivo)
 ========================================================== */
-const DB_PATH = "./database.json";
+const DB_PATH = path.join(__dirname, "database.json");
 
 let database = {
   lastMessageId: "",
@@ -46,16 +64,25 @@ let database = {
   }
 };
 
+// Função para salvar a database no arquivo local
+function salvarBanco() {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(database, null, 2), "utf-8");
+    console.log("💾 Banco de dados local atualizado com sucesso!");
+  } catch (err) {
+    console.error("❌ Erro ao salvar banco de dados:", err);
+  }
+}
+
 // Carrega os dados persistidos se o arquivo já existir
 if (fs.existsSync(DB_PATH)) {
   try {
     const fileContent = fs.readFileSync(DB_PATH, "utf-8");
-    database = JSON.parse(fileContent);
-    // Garantir estrutura caso falte algo
-    if (!database.cargos) {
-      database.cargos = { Lider: [], Gerente: [], Elite: [], membros: [], Recruta: [] };
+    const parsed = JSON.parse(fileContent);
+    if (parsed && parsed.cargos) {
+      database = parsed;
+      console.log("💾 Banco de dados local carregado com sucesso!");
     }
-    console.log("💾 Banco de dados local carregado com sucesso!");
   } catch (err) {
     console.error("❌ Falha ao carregar banco de dados. Iniciando limpo.", err);
   }
@@ -63,16 +90,7 @@ if (fs.existsSync(DB_PATH)) {
   salvarBanco();
 }
 
-function salvarBanco() {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(database, null, 2), "utf-8");
-    console.log("💾 Banco de dados salvo com sucesso!");
-  } catch (err) {
-    console.error("❌ Falha ao salvar banco de dados:", err);
-  }
-}
-
-// Formatação Visual Oficial dos Cargos (Idêntica ao Painel)
+// Formatação Visual Oficial dos Cargos baseados no Clã Hunters
 const NOMES_CARGOS = {
   Lider: "☣️ **· Lider** 👑",
   Gerente: "☣️ **· Gerentes FiveZ**",
@@ -136,14 +154,16 @@ function criarEmbed() {
 }
 
 /* ==========================================================
-   📤 SINCRONIZAR MENSAGEM DO EMBED
+   📤 SINCRONIZAR MENSAGEM DO EMBED (Quadro Fixo)
 ========================================================== */
 async function atualizarQuadro(guild) {
   try {
     if (!guild) return console.log("⚠️ Guild não fornecida para atualizar quadro.");
     
     const canal = await guild.channels.fetch(CHANNEL_ID);
-    if (!canal) return console.log("⚠️ Canal não encontrado!");
+    if (!canal || !(canal instanceof TextChannel)) {
+      return console.log("⚠️ Canal não encontrado ou não é um canal de texto!");
+    }
 
     const embed = criarEmbed();
 
@@ -160,7 +180,7 @@ async function atualizarQuadro(guild) {
       }
     }
 
-    // Se não editou, envia uma nova mensagem
+    // Se não editou, envia uma nova mensagem e fixa a ID dela
     const novaMsg = await canal.send({ embeds: [embed] });
     database.lastMessageId = novaMsg.id;
     salvarBanco();
@@ -222,23 +242,19 @@ const commands = [
 ].map(cmd => cmd.toJSON());
 
 async function registrarComandos() {
-  if (
-    !TOKEN || TOKEN === "SEU_DISCORD_TOKEN_AQUI" || 
-    !CLIENT_ID || CLIENT_ID === "SEU_APPLICATION_CLIENT_ID" || 
-    !GUILD_ID || GUILD_ID === "ID_DO_SEU_SERVIDOR_DISCORD"
-  ) {
-    console.log("⚠️ Credenciais padrão detectadas ou incompletas. Pulando registro de slash commands.");
+  if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
+    console.log("⚠️ Credenciais incompletas no painel de controle. Pulando registro de comandos.");
     return;
   }
   
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
-    console.log("⚙️ Registrando comandos corporativos...");
+    console.log("⚙️ Registrando comandos do Clã Hunters...");
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
-    console.log("✅ Comandos registrados com sucesso!");
+    console.log("✅ Comandos de barra registrados com sucesso!");
   } catch (error) {
     console.error("❌ Falha ao registrar comandos:", error);
   }
@@ -269,7 +285,7 @@ client.on("interactionCreate", async interaction => {
         database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
       });
 
-      // Adiciona ao cargo novo se não existir
+      // Adiciona ao cargo novo
       if (!database.cargos[cargo]) {
         database.cargos[cargo] = [];
       }
@@ -281,7 +297,6 @@ client.on("interactionCreate", async interaction => {
         ephemeral: false
       });
 
-      // Atualiza o quadro fixado automaticamente
       if (guild) {
         await atualizarQuadro(guild);
       }
@@ -308,7 +323,6 @@ client.on("interactionCreate", async interaction => {
         ephemeral: false
       });
 
-      // Atualiza o quadro fixado automaticamente
       if (guild) {
         await atualizarQuadro(guild);
       }
@@ -335,23 +349,23 @@ client.once("ready", async () => {
   
   await registrarComandos();
   
-  if (GUILD_ID && GUILD_ID !== "ID_DO_SEU_SERVIDOR_DISCORD") {
+  if (GUILD_ID) {
     try {
       const guild = await client.guilds.fetch(GUILD_ID);
       if (guild) {
         await atualizarQuadro(guild);
       }
     } catch (err) {
-      console.log("⚠️ Não foi possível carregar a guilda inicial para atualizar o quadro automaticamente.");
+      console.log("⚠️ Não foi possível atualizar o quadro automaticamente no canal.");
     }
   }
 });
 
 // Realizar Login
-if (TOKEN && TOKEN !== "SEU_DISCORD_TOKEN_AQUI") {
+if (TOKEN) {
   client.login(TOKEN).catch(err => {
     console.error("❌ Falha no login do Bot do Discord:", err);
   });
 } else {
-  console.log("⚠️ TOKEN não configurado ou padrão. Pulando login do Discord.");
+  console.log("⚠️ TOKEN não configurado. Por favor configure a variável TOKEN nas configurações da hospedagem.");
 }
