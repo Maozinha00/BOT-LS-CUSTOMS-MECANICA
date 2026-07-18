@@ -26,8 +26,8 @@ app.listen(PORT, "0.0.0.0", () => {
    🔑 CONFIGURAÇÕES DE CREDENCIAIS (VARIÁVEIS DE AMBIENTE)
 ========================================================== */
 const TOKEN = process.env.TOKEN || "SEU_DISCORD_TOKEN_AQUI";
-const CLIENT_ID = process.env.CLIENT_ID || "SEU_APPLICATION_CLIENT_ID";
-const GUILD_ID = process.env.GUILD_ID || "ID_DO_SEU_SERVIDOR_DISCORD";
+const CLIENT_ID = process.env.CLIENT_ID || "1499078466862317740";
+const GUILD_ID = process.env.GUILD_ID || "1456655598031601727";
 const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // ID do canal do Quadro
 
 /* ==========================================================
