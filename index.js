@@ -1,164 +1,163 @@
 /**
- * Bot de Hierarquia Oficial — Clã Hunters (Zumbi Fivez)
- * Requisitos: npm install discord.js express dotenv
+ * ⚔️ CLÃ HUNTERS - DISCORD BOT CODESP & HIERARCHY ⚔️
+ * Criado para servidores FiveM Zumbi Apocalypse.
  */
 
 require("dotenv").config();
 const express = require("express");
-const {
-  Client,
-  GatewayIntentBits,
-  EmbedBuilder,
-  REST,
-  Routes,
+const { 
+  Client, 
+  GatewayIntentBits, 
+  EmbedBuilder, 
+  REST, 
+  Routes, 
   SlashCommandBuilder,
-  ActivityType,
-  TextChannel
+  ActivityType
 } = require("discord.js");
 
 /* ==========================================================
-   🌐 KEEP ALIVE SYSTEM
+   🌐 MANTER ONLINE (WEB SERVER REPLAY LINK)
 ========================================================== */
 const app = express();
-app.get("/", (_, res) => res.send("Bot Clã Hunters Ativo ⚔️"));
+app.get("/", (_, res) => res.send("Bot Clã Hunters está Ativo! ⚔️"));
 app.listen(process.env.PORT || 3000, () => {
-  console.log("🌐 Web server ativo de Keep-Alive iniciado.");
+  console.log("🌐 Web server ativo de Keep-Alive.");
 });
 
 /* ==========================================================
-   🔐 CONFIGURAÇÃO
+   🔑 CONFIGURAÇÕES DE CREDENCIAIS
+   Substitua as strings abaixo pelas suas chaves ou use o .env
 ========================================================== */
-const TOKEN = process.env.TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID;
-const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026";
+const TOKEN = process.env.TOKEN || "SEU_DISCORD_TOKEN_AQUI";
+const CLIENT_ID = process.env.CLIENT_ID || "SEU_APPLICATION_CLIENT_ID";
+const GUILD_ID = process.env.GUILD_ID || "ID_DO_SEU_SERVIDOR_DISCORD";
+const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // ID do canal do Quadro
 
-// Banco de Dados em Memória (Pode ser integrado ao painel)
-let membros = [
-  { id: "1", name: "Maozinha", nickname: "Hunters | Maozinha", role: "Lider", tag: "maozinha#0001" },
-  { id: "2", name: "Ghost", nickname: "Hunters | Ghost", role: "Gerente", tag: "ghost#0002" }
-];
+/* ==========================================================
+   📦 BANCO DE DADOS EM MEMÓRIA (COPIADO DO PAINEL)
+========================================================== */
+const cargos = {
+  Lider: [],
+  Gerente: [],
+  Elite: [],
+  membros: [],
+  Recruta: []
+};
 
-let lastMessageId = null;
-
-const ROLE_EMOJIS = {
-  Lider: "👑 **1. LIDER**",
-  Gerente: "⚡ **2. GERENTE**",
-  Elite: "💀 **3. ELITE**",
-  membros: "🔫 **4. MEMBROS**",
-  Recruta: "🔰 **5. RECRUTA**"
+// Formatação Visual Oficial dos Cargos baseados na Imagem do Servidor
+const NOMES_CARGOS = {
+  Lider: "☣️ **· Lider** 👑",
+  Gerente: "☣️ **· Gerentes FiveZ**",
+  Elite: "☣️ **· Elite** 💀",
+  membros: "☣️ **· Membros** 🔫",
+  Recruta: "☣️ **· Recruta** 🔰"
 };
 
 /* ==========================================================
-   🤖 DISCORD CLIENT
+   🤖 CLIENT DISCORD
 ========================================================== */
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// Geração do Texto de Hierarquia formatado para o Discord
-function gerarTextoHierarquia() {
+/* ==========================================================
+   🧠 CONSTRUTOR DE EMBED DA HIERARQUIA
+========================================================== */
+function gerarTexto() {
   const data = new Date();
   const dataFormatada = data.toLocaleDateString("pt-BR");
-  const horaFormatada = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const horaFormatada = data.toLocaleTimeString("pt-BR");
 
-  function listarMembrosPorCargo(cargo) {
-    const lista = membros.filter(m => m.role === cargo);
-    if (lista.length === 0) return "└ *Nenhum integrante cadastrado*";
-    
-    return lista.map(m => {
-      const isSnowflake = /^\d{17,19}$/.test(m.id);
-      const mencao = isSnowflake ? `<@${m.id}>` : `**${m.name}**`;
-      const nick = m.nickname && m.nickname !== m.name ? ` (${m.nickname})` : "";
-      return `└ ${mencao}${nick}`;
-    }).join("\n");
+  function listar(cargoKey) {
+    const lista = cargos[cargoKey];
+    return lista.length
+      ? lista.map(id => `└ <@${id}>`).join("\n")
+      : `└ *(Vazio)*`;
   }
 
   return `☠️ **QUADRO DE CARGOS - HUNTERS ZUMBI FIVEZ** ☠️
 
-${ROLE_EMOJIS.Lider}
-${listarMembrosPorCargo("Lider")}
+${NOMES_CARGOS.Lider}
+${listar("Lider")}
 
-${ROLE_EMOJIS.Gerente}
-${listarMembrosPorCargo("Gerente")}
+${NOMES_CARGOS.Gerente}
+${listar("Gerente")}
 
-${ROLE_EMOJIS.Elite}
-${listarMembrosPorCargo("Elite")}
+${NOMES_CARGOS.Elite}
+${listar("Elite")}
 
-${ROLE_EMOJIS.membros}
-${listarMembrosPorCargo("membros")}
+${NOMES_CARGOS.membros}
+${listar("membros")}
 
-${ROLE_EMOJIS.Recruta}
-${listarMembrosPorCargo("Recruta")}
+${NOMES_CARGOS.Recruta}
+${listar("Recruta")}
 
 📅 **Atualizado em** ${dataFormatada} às ${horaFormatada}
 ⚔️ *Sobrevivência & Caça ao Extremo nos servidores FiveM*`;
 }
 
-// Criação do Painel Embed Temático
 function criarEmbed() {
   return new EmbedBuilder()
     .setTitle("⚔️ CLÃ HUNTERS - HIERARQUIA OFICIAL ⚔️")
-    .setColor("#16a34a") // Verde Tóxico / Neon
-    .setDescription(gerarTextoHierarquia())
-    .setThumbnail("https://images.unsplash.com/photo-1601987177651-8edfe6c20009?q=80&w=200") // Thumbnail de sobrevivente
-    .setImage("https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200") // Banner de floresta apocalíptica
+    .setColor("#16a34a") // Verde Neon Tóxico
+    .setDescription(gerarTexto())
+    .setThumbnail("https://images.unsplash.com/photo-1601987177651-8edfe6c20009?q=80&w=200")
+    .setImage("https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200")
     .setFooter({ text: "Sistema Automatizado Clã Hunters • Hunters Zumbi Fivez" })
     .setTimestamp();
 }
 
-// Sincronizar painel no canal específico (Edita mensagem existente ou envia nova)
-async function sincronizarQuadro(guild) {
-  const canal = guild.channels.cache.get(CHANNEL_ID);
-  if (!canal || !(canal instanceof TextChannel)) {
-    return console.log("⚠️ Canal de texto não encontrado ou inválido!");
-  }
+/* ==========================================================
+   📤 SINCRONIZAR MENSAGEM DO EMBED
+========================================================== */
+let lastMessageId = ""; // Guarda a ID da última mensagem para editá-la e não poluir o chat
 
+async function atualizarQuadro(guild) {
   try {
+    const canal = await guild.channels.fetch(CHANNEL_ID);
+    if (!canal) return console.log("⚠️ Canal não encontrado!");
+
     const embed = criarEmbed();
-    let editado = false;
 
     if (lastMessageId) {
       try {
-        const msgAnterior = await canal.messages.fetch(lastMessageId);
-        if (msgAnterior) {
-          await msgAnterior.edit({ embeds: [embed] });
-          editado = true;
-          console.log(`✅ Quadro atualizado/editado no canal: ${lastMessageId}`);
+        const msg = await canal.messages.fetch(lastMessageId);
+        if (msg) {
+          await msg.edit({ embeds: [embed] });
+          console.log("✅ Quadro de Cargos editado com sucesso!");
+          return;
         }
       } catch (err) {
-        console.log("Mensagem anterior não encontrada no histórico, postando nova...");
+        // Mensagem antiga foi deletada, enviaremos outra abaixo
       }
     }
 
-    if (!editado) {
-      const novaMsg = await canal.send({ embeds: [embed] });
-      lastMessageId = novaMsg.id;
-      console.log(`✅ Novo quadro postado no canal: ${novaMsg.id}`);
-    }
-  } catch (error) {
-    console.error("Erro ao sincronizar quadro:", error);
+    const novaMsg = await canal.send({ embeds: [embed] });
+    lastMessageId = novaMsg.id;
+    console.log("✨ Novo Quadro de Cargos publicado!");
+  } catch (err) {
+    console.error("❌ Erro ao atualizar quadro no Discord:", err);
   }
 }
 
 /* ==========================================================
-   📜 COMANDOS REGISTRADOS (Slash Commands)
+   📜 REGISTRO DE COMANDOS DE BARRA (/COMANDOS)
 ========================================================== */
 const commands = [
   new SlashCommandBuilder()
     .setName("quadro")
-    .setDescription("Exibe o quadro de cargos oficial do Clã Hunters"),
+    .setDescription("Ver o quadro de cargos oficial do Clã Hunters"),
 
   new SlashCommandBuilder()
     .setName("addcargo")
     .setDescription("Adiciona um sobrevivente a um cargo do clã")
     .addStringOption(opt =>
       opt.setName("cargo")
-        .setDescription("Selecione o cargo")
+        .setDescription("Cargo desejado")
         .setRequired(true)
         .addChoices(
           { name: "👑 Lider", value: "Lider" },
-          { name: "⚡ Gerente", value: "Gerente" },
+          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
           { name: "💀 Elite", value: "Elite" },
           { name: "🔫 Membros", value: "membros" },
           { name: "🔰 Recruta", value: "Recruta" }
@@ -166,13 +165,8 @@ const commands = [
     )
     .addUserOption(opt =>
       opt.setName("sobrevivente")
-        .setDescription("Selecione o usuário no Discord")
+        .setDescription("Usuário do Discord")
         .setRequired(true)
-    )
-    .addStringOption(opt =>
-      opt.setName("apelido")
-        .setDescription("Apelido dentro do jogo / FiveM")
-        .setRequired(false)
     ),
 
   new SlashCommandBuilder()
@@ -180,11 +174,11 @@ const commands = [
     .setDescription("Remove um sobrevivente de um cargo")
     .addStringOption(opt =>
       opt.setName("cargo")
-        .setDescription("Cargo do qual deseja remover")
+        .setDescription("Cargo a remover")
         .setRequired(true)
         .addChoices(
           { name: "👑 Lider", value: "Lider" },
-          { name: "⚡ Gerente", value: "Gerente" },
+          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
           { name: "💀 Elite", value: "Elite" },
           { name: "🔫 Membros", value: "membros" },
           { name: "🔰 Recruta", value: "Recruta" }
@@ -192,7 +186,7 @@ const commands = [
     )
     .addUserOption(opt =>
       opt.setName("sobrevivente")
-        .setDescription("Selecione o usuário no Discord")
+        .setDescription("Usuário do Discord")
         .setRequired(true)
     )
 ].map(cmd => cmd.toJSON());
@@ -201,89 +195,88 @@ const rest = new REST({ version: "10" }).setToken(TOKEN);
 
 async function registrarComandos() {
   try {
-    console.log("Iniciando registro de comandos de barra do Clã...");
+    console.log("⚙️ Registrando comandos corporativos...");
     await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commands }
     );
     console.log("✅ Comandos registrados com sucesso!");
-  } catch (err) {
-    console.error("Erro ao registrar comandos no Discord:", err);
+  } catch (error) {
+    console.error("❌ Falha ao registrar comandos:", error);
   }
 }
 
 /* ==========================================================
-   🎮 INTERAÇÕES DO CLIENTE
+   🎮 EVENTOS & INTERAÇÕES
 ========================================================== */
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const { commandName, guild } = interaction;
+  const { commandName, options, guild } = interaction;
+  const cargo = options.getString("cargo");
+  const user = options.getUser("sobrevivente");
 
-  if (commandName === "quadro") {
-    return interaction.reply({ embeds: [criarEmbed()] });
-  }
-
-  if (commandName === "addcargo") {
-    const cargo = interaction.options.getString("cargo");
-    const user = interaction.options.getUser("sobrevivente");
-    const apelido = interaction.options.getString("apelido");
-
-    // Remove do cargo antigo para evitar duplicados
-    membros = membros.filter(m => m.id !== user.id);
-
-    membros.push({
-      id: user.id,
-      name: user.username,
-      nickname: apelido ? `Hunters | ${apelido}` : `Hunters | ${user.username}`,
-      role: cargo,
-      tag: `${user.username}#${user.discriminator || "0000"}`
-    });
-
-    await interaction.reply({
-      content: `✅ **${user.username}** foi adicionado ao cargo **${cargo}** com sucesso! Sincronizando quadro...`
-    });
-
-    return sincronizarQuadro(guild);
-  }
-
-  if (commandName === "removercargo") {
-    const cargo = interaction.options.getString("cargo");
-    const user = interaction.options.getUser("sobrevivente");
-
-    const tamanhoAntes = membros.length;
-    membros = membros.filter(m => !(m.id === user.id && m.role === cargo));
-    const tamanhoDepois = membros.length;
-
-    if (tamanhoAntes === tamanhoDepois) {
-      return interaction.reply({
-        content: `⚠️ O usuário **${user.username}** não pertence ao cargo **${cargo}**.`,
-        ephemeral: true
-      });
+  try {
+    if (commandName === "quadro") {
+      return interaction.reply({ embeds: [criarEmbed()] });
     }
 
-    await interaction.reply({
-      content: `❌ **${user.username}** foi removido do cargo **${cargo}**. Atualizando quadro...`
-    });
+    if (commandName === "addcargo") {
+      // Remove o usuário de qualquer outro cargo antes para não duplicar
+      Object.keys(cargos).forEach(k => {
+        cargos[k] = cargos[k].filter(id => id !== user.id);
+      });
 
-    return sincronizarQuadro(guild);
+      // Adiciona ao cargo novo
+      cargos[cargo].push(user.id);
+      await interaction.reply({
+        content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
+        ephemeral: false
+      });
+
+      // Atualiza o quadro fixado automaticamente
+      await atualizarQuadro(guild);
+    }
+
+    if (commandName === "removercargo") {
+      const antes = cargos[cargo].length;
+      cargos[cargo] = cargos[cargo].filter(id => id !== user.id);
+      const depois = cargos[cargo].length;
+
+      if (antes === depois) {
+        return interaction.reply({
+          content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
+          ephemeral: true
+        });
+      }
+
+      await interaction.reply({
+        content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
+        ephemeral: false
+      });
+
+      // Atualiza o quadro fixado automaticamente
+      await atualizarQuadro(guild);
+    }
+  } catch (err) {
+    console.error(err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: "❌ Ocorreu um erro ao processar o comando.", ephemeral: true });
+    }
   }
 });
 
 /* ==========================================================
-   🚀 INICIALIZAÇÃO
+   🚀 BOT PRONTO
 ========================================================== */
 client.once("ready", async () => {
-  console.log(`🔥 Bot Hunters online como ${client.user.tag}`);
+  console.log(`🔥 Bot conectado com sucesso como: ${client.user.tag}`);
+  
+  // Setar status "Jogando Hunters Zumbi Fivez"
   client.user.setActivity("Hunters Zumbi Fivez", { type: ActivityType.Playing });
   
   await registrarComandos();
-  
-  // Sincroniza o quadro automaticamente no canal ao iniciar
-  const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
-  if (guild) {
-    await sincronizarQuadro(guild);
-  }
 });
 
+// Realizar Login
 client.login(TOKEN);
