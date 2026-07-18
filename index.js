@@ -147,8 +147,8 @@ function criarEmbed() {
     .setTitle("⚔️ CLÃ HUNTERS - HIERARQUIA OFICIAL ⚔️")
     .setColor("#16a34a") // Verde Neon Tóxico
     .setDescription(gerarTexto())
-    .setThumbnail("https://images.unsplash.com/photo-1601987177651-8edfe6c20009?q=80&w=200")
-    .setImage("https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1200")
+    .setThumbnail("https://i.imgur.com/kS3fFku.jpeg=200")
+    .setImage("https://i.imgur.com/kS3fFku.jpeg=1200")
     .setFooter({ text: "Sistema Automatizado Clã Hunters • Hunters Zumbi Fivez" })
     .setTimestamp();
 }
