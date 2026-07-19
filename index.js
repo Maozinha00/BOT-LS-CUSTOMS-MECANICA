@@ -1,9 +1,11 @@
 /**
- * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT ⚔️
+ * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT (UPGRADED) ⚔️
  * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
  * 
- * Este bot utiliza ES Modules (import) compatível com o "type": "module" do seu package.json.
- * Ele possui persistência de dados local automática usando um arquivo JSON para não perder os membros cadastrados.
+ * Este bot possui sincronização AUTOMÁTICA de cargos (ID de cada pessoa) e 
+ * mantém comandos manuais de adição/remoção em perfeito funcionamento!
+ * 
+ * Requisitos: Ative a opção "SERVER MEMBERS INTENT" no Discord Developer Portal!
  */
 
 import "dotenv/config";
@@ -47,6 +49,15 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // Canal do Quadro de Cargos
+
+// IDs opcionais para mapeamento direto e preciso de cargos do Discord
+const ROLE_IDS = {
+  Lider: process.env.ROLE_LIDER_ID,
+  Gerente: process.env.ROLE_GERENTE_ID,
+  Elite: process.env.ROLE_ELITE_ID,
+  membros: process.env.ROLE_MEMBROS_ID,
+  Recruta: process.env.ROLE_RECRUTA_ID
+};
 
 /* ==========================================================
    💾 PERSISTÊNCIA DE DADOS (Banco de dados local em arquivo)
@@ -100,10 +111,14 @@ const NOMES_CARGOS = {
 };
 
 /* ==========================================================
-   🤖 CLIENT DISCORD
+   🤖 CLIENT DISCORD (Intents necessários: Guilds e GuildMembers)
 ========================================================== */
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers, // Essencial para listar membros e detectar mudança de cargos!
+    GatewayIntentBits.GuildPresences
+  ]
 });
 
 /* ==========================================================
@@ -191,6 +206,79 @@ async function atualizarQuadro(guild) {
 }
 
 /* ==========================================================
+   🔍 IDENTIFICADOR AUTOMÁTICO DE CARGO DO CLÃ (5Z)
+========================================================== */
+function detectarCargoDoCla(member) {
+  const roles = member.roles.cache;
+
+  // 1. Tentar por ID preciso configurado nas variáveis de ambiente (.env)
+  if (ROLE_IDS.Lider && roles.has(ROLE_IDS.Lider)) return "Lider";
+  if (ROLE_IDS.Gerente && roles.has(ROLE_IDS.Gerente)) return "Gerente";
+  if (ROLE_IDS.Elite && roles.has(ROLE_IDS.Elite)) return "Elite";
+  if (ROLE_IDS.membros && roles.has(ROLE_IDS.membros)) return "membros";
+  if (ROLE_IDS.Recruta && roles.has(ROLE_IDS.Recruta)) return "Recruta";
+
+  // 2. Fallback: Inteligência por correspondência de Nome de Cargo no Discord
+  let matchedCargo = null;
+  roles.forEach(role => {
+    const name = role.name.toLowerCase();
+    
+    if (name.includes("lider") || name.includes("líder")) {
+      matchedCargo = "Lider";
+    } else if (name.includes("gerente")) {
+      matchedCargo = "Gerente";
+    } else if (name.includes("elite")) {
+      matchedCargo = "Elite";
+    } else if (name.includes("membro")) {
+      matchedCargo = "membros";
+    } else if (name.includes("recruta")) {
+      matchedCargo = "Recruta";
+    }
+  });
+
+  return matchedCargo;
+}
+
+/* ==========================================================
+   🔄 SINCRO AUTOMÁTICA: VARRER GUILDA COMPLETAMENTE
+========================================================== */
+async function sincronizarMembrosDaGuilda(guild) {
+  try {
+    console.log("🔄 Iniciando sincronização automática completa dos cargos...");
+    
+    // Forçar carregamento/fetch de todos os membros (Requer Intent GuildMembers ativo!)
+    await guild.members.fetch();
+    
+    // Novo objeto temporário limpo para re-preencher
+    const novosCargos = {
+      Lider: [],
+      Gerente: [],
+      Elite: [],
+      membros: [],
+      Recruta: []
+    };
+
+    guild.members.cache.forEach(member => {
+      if (member.user.bot) return; // ignora bots
+      
+      const cargoDetectado = detectarCargoDoCla(member);
+      if (cargoDetectado) {
+        novosCargos[cargoDetectado].push(member.id);
+      }
+    });
+
+    // Atualiza a nossa base de dados com as informações reais do Discord
+    database.cargos = novosCargos;
+    salvarBanco();
+    
+    console.log("✅ Sincronização automática concluída com sucesso!");
+    await atualizarQuadro(guild);
+  } catch (err) {
+    console.error("❌ Erro ao sincronizar membros da guilda:", err);
+  }
+}
+
+/* ==========================================================
    📜 REGISTRO DE COMANDOS DE BARRA (/COMANDOS)
 ========================================================== */
 const commands = [
@@ -199,8 +287,12 @@ const commands = [
     .setDescription("Ver o quadro de cargos oficial do Clã Hunters"),
 
   new SlashCommandBuilder()
+    .setName("sincronizar")
+    .setDescription("Varre o servidor do Discord e puxa todos os cargos automaticamente para a hierarquia"),
+
+  new SlashCommandBuilder()
     .setName("addcargo")
-    .setDescription("Adiciona um sobrevivente a um cargo do clã")
+    .setDescription("Adiciona um sobrevivente a um cargo do clã manualmente")
     .addStringOption(opt =>
       opt.setName("cargo")
         .setDescription("Cargo desejado")
@@ -221,7 +313,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("removercargo")
-    .setDescription("Remove um sobrevivente de um cargo")
+    .setDescription("Remove um sobrevivente de um cargo manualmente")
     .addStringOption(opt =>
       opt.setName("cargo")
         .setDescription("Cargo a remover")
@@ -263,6 +355,55 @@ async function registrarComandos() {
 /* ==========================================================
    🎮 EVENTOS & INTERAÇÕES
 ========================================================== */
+
+// 1. EVENTO DE MUDANÇA DE CARGO DO USUÁRIO (AUTOMATIZADO!)
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  try {
+    // Verifica se os cargos de fato mudaram para evitar loops
+    const oldRoles = oldMember.roles.cache;
+    const newRoles = newMember.roles.cache;
+    if (oldRoles.size === newRoles.size && oldRoles.every(r => newRoles.has(r.id))) {
+      return;
+    }
+
+    console.log(`🔄 Alteração de cargos detectada para o sobrevivente: ${newMember.user.tag}`);
+
+    const userId = newMember.id;
+    const novoCargoDetectado = detectarCargoDoCla(newMember);
+
+    let alterouAlgo = false;
+
+    // Remove o usuário de QUALQUER categoria existente do 5Z para não duplicar na hierarquia
+    Object.keys(database.cargos).forEach(cargoKey => {
+      const listaOriginal = database.cargos[cargoKey] || [];
+      if (listaOriginal.includes(userId)) {
+        database.cargos[cargoKey] = listaOriginal.filter(id => id !== userId);
+        alterouAlgo = true;
+        console.log(`🗑️ Removido automaticamente do cargo anterior [${cargoKey}] devido a troca de cargo.`);
+      }
+    });
+
+    // Se ele tem um novo cargo do clã, adiciona na lista correspondente
+    if (novoCargoDetectado) {
+      if (!database.cargos[novoCargoDetectado]) {
+        database.cargos[novoCargoDetectado] = [];
+      }
+      database.cargos[novoCargoDetectado].push(userId);
+      alterouAlgo = true;
+      console.log(`📥 Adicionado automaticamente ao cargo [${novoCargoDetectado}]!`);
+    }
+
+    // Se houve alguma alteração real na hierarquia do banco de dados, salva e atualiza o quadro!
+    if (alterouAlgo) {
+      salvarBanco();
+      await atualizarQuadro(newMember.guild);
+    }
+  } catch (err) {
+    console.error("❌ Erro no evento guildMemberUpdate:", err);
+  }
+});
+
+// 2. INTERAÇÃO DE COMANDOS DE BARRA
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -271,119 +412,96 @@ client.on("interactionCreate", async interaction => {
   const user = options.getUser("sobrevivente");
 
   try {
-    // 1. Comando público do quadro (/quadro) - mas com restrição estrita de uso opcional
+    // Permissão de acesso: Gerentes, Líderes ou Administradores
+    const isLiderDb = database.cargos.Lider && database.cargos.Lider.includes(executingUser.id);
+    const isGerenteDb = database.cargos.Gerente && database.cargos.Gerente.includes(executingUser.id);
+    
+    const member = interaction.member;
+    const possessesAuthorizedRole = member ? member.roles.cache.some(role => {
+      const name = role.name.toLowerCase();
+      return name.includes("gerente") || 
+             name.includes("lider") || 
+             name.includes("líder") || 
+             role.id === "1515125822795546715" || 
+             role.id === "1523277774436171796";
+    }) || member.permissions.has("Administrator") : false;
+
+    const authorized = isLiderDb || isGerenteDb || possessesAuthorizedRole;
+
+    if (!authorized) {
+      return interaction.reply({
+        content: "❌ **Acesso Negado!** Sobrevivente, apenas a **Gerência** ou cargos autorizados do Clã Hunters possuem autoridade para usar este comando.",
+        ephemeral: true
+      });
+    }
+
+    // Comando de Visualizar Quadro
     if (commandName === "quadro") {
-      const member = interaction.member;
-      
-      // Validação de permissões para ver o quadro
-      const isLiderDb = database.cargos.Lider && database.cargos.Lider.includes(executingUser.id);
-      const isGerenteDb = database.cargos.Gerente && database.cargos.Gerente.includes(executingUser.id);
-      
-      const possessesAuthorizedRole = member ? member.roles.cache.some(role => {
-        const name = role.name.toLowerCase();
-        return name.includes("gerente") || 
-               name.includes("lider") || 
-               name.includes("líder") || 
-               role.id === "1515125822795546715" || 
-               role.id === "1523277774436171796";
-      }) || member.permissions.has("Administrator") : false;
-
-      const authorized = isLiderDb || isGerenteDb || possessesAuthorizedRole;
-
-      if (!authorized) {
-        return interaction.reply({
-          content: "❌ **Acesso Negado!** Apenas sobreviventes autorizados podem requisitar visualizações do quadro público.",
-          ephemeral: true
-        });
-      }
-
       return interaction.reply({ embeds: [criarEmbed()] });
     }
 
-    // 2. Comandos de gerenciar cargos (/addcargo e /removercargo)
-    if (commandName === "addcargo" || commandName === "removercargo") {
-      const member = interaction.member;
-      if (!member) {
+    // Comando de Sincronização Geral
+    if (commandName === "sincronizar") {
+      await interaction.reply({ content: "🔄 **Sincronizando todos os membros com cargos ativos...**", ephemeral: true });
+      if (guild) {
+        await sincronizarMembrosDaGuilda(guild);
+        await interaction.followUp({ content: "✅ **Sincronização concluída!** O quadro de cargos oficial foi atualizado.", ephemeral: true });
+      } else {
+        await interaction.followUp({ content: "❌ Não foi possível obter o servidor.", ephemeral: true });
+      }
+      return;
+    }
+
+    // Comando Manual de Adicionar Cargo
+    if (commandName === "addcargo") {
+      if (!cargo || !user) return;
+
+      // Remove de todos os cargos primeiro para não duplicar
+      Object.keys(database.cargos).forEach(k => {
+        database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
+      });
+
+      // Adiciona ao cargo novo
+      if (!database.cargos[cargo]) {
+        database.cargos[cargo] = [];
+      }
+      database.cargos[cargo].push(user.id);
+      salvarBanco();
+
+      await interaction.reply({
+        content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
+        ephemeral: false
+      });
+
+      if (guild) {
+        await atualizarQuadro(guild);
+      }
+    }
+
+    // Comando Manual de Remover Cargo
+    if (commandName === "removercargo") {
+      if (!cargo || !user || !database.cargos[cargo]) return;
+
+      const antes = database.cargos[cargo].length;
+      database.cargos[cargo] = database.cargos[cargo].filter(id => id !== user.id);
+      const depois = database.cargos[cargo].length;
+
+      if (antes === depois) {
         return interaction.reply({
-          content: "❌ Este comando só pode ser usado dentro de um servidor.",
+          content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
           ephemeral: true
         });
       }
 
-      // Validação de permissões para alterações
-      const isLiderDb = database.cargos.Lider && database.cargos.Lider.includes(executingUser.id);
-      const isGerenteDb = database.cargos.Gerente && database.cargos.Gerente.includes(executingUser.id);
+      salvarBanco();
 
-      // Permite se o nome do cargo contiver "gerente"/"lider", for Administrador, ou for um dos IDs de cargo permitidos:
-      const possessesAuthorizedRole = member.roles.cache.some(role => {
-        const name = role.name.toLowerCase();
-        return name.includes("gerente") || 
-               name.includes("lider") || 
-               name.includes("líder") || 
-               role.id === "1515125822795546715" || 
-               role.id === "1523277774436171796";
-      }) || member.permissions.has("Administrator");
+      await interaction.reply({
+        content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
+        ephemeral: false
+      });
 
-      const authorized = isLiderDb || isGerenteDb || possessesAuthorizedRole;
-
-      if (!authorized) {
-        return interaction.reply({
-          content: "❌ **Acesso Negado!** Sobrevivente, apenas a **Gerência** ou cargos autorizados do Clã Hunters possuem autoridade para gerenciar a hierarquia.",
-          ephemeral: true
-        });
-      }
-
-      if (!user) return;
-
-      if (commandName === "addcargo") {
-        if (!cargo) return;
-
-        // Remove o usuário de qualquer outro cargo antes para não duplicar
-        Object.keys(database.cargos).forEach(k => {
-          database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
-        });
-
-        // Adiciona ao cargo novo
-        if (!database.cargos[cargo]) {
-          database.cargos[cargo] = [];
-        }
-        database.cargos[cargo].push(user.id);
-        salvarBanco();
-
-        await interaction.reply({
-          content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
-          ephemeral: false
-        });
-
-        if (guild) {
-          await atualizarQuadro(guild);
-        }
-      }
-
-      if (commandName === "removercargo") {
-        if (!cargo || !database.cargos[cargo]) return;
-
-        const antes = database.cargos[cargo].length;
-        database.cargos[cargo] = database.cargos[cargo].filter(id => id !== user.id);
-        const depois = database.cargos[cargo].length;
-
-        if (antes === depois) {
-          return interaction.reply({
-            content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
-            ephemeral: true
-          });
-        }
-
-        salvarBanco();
-
-        await interaction.reply({
-          content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
-          ephemeral: false
-        });
-
-        if (guild) {
-          await atualizarQuadro(guild);
-        }
+      if (guild) {
+        await atualizarQuadro(guild);
       }
     }
   } catch (err) {
@@ -406,16 +524,18 @@ client.once("ready", async () => {
     client.user.setActivity("Hunters Zumbi Fivez", { type: ActivityType.Playing });
   }
   
+  // Registrar comandos de barra (/addcargo, /removercargo, /sincronizar, /quadro)
   await registrarComandos();
   
   if (GUILD_ID) {
     try {
       const guild = await client.guilds.fetch(GUILD_ID);
       if (guild) {
-        await atualizarQuadro(guild);
+        // Realiza uma sincronização inicial de todos os membros ao ligar o bot!
+        await sincronizarMembrosDaGuilda(guild);
       }
     } catch (err) {
-      console.log("⚠️ Não foi possível atualizar o quadro automaticamente no canal.");
+      console.log("⚠️ Não foi possível sincronizar o quadro automaticamente no canal de início. Verifique o GUILD_ID.");
     }
   }
 });
