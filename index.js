@@ -50,7 +50,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // Canal do Quadro de Cargos
 
-// IDs opcionais para mapeamento direto e preciso de cargos do Discord
+// IDs opcionais para mapeamento direto e preciso de cargos do Discord (Configure no .env se desejar)
 const ROLE_IDS = {
   Lider: process.env.ROLE_LIDER_ID,
   Gerente: process.env.ROLE_GERENTE_ID,
@@ -208,35 +208,52 @@ async function atualizarQuadro(guild) {
 /* ==========================================================
    🔍 IDENTIFICADOR AUTOMÁTICO DE CARGO DO CLÃ (5Z)
 ========================================================== */
-function detectarCargoDoCla(member) {
+function detectarCargosDoCla(member) {
   const roles = member.roles.cache;
+  const cargosEncontrados = [];
 
   // 1. Tentar por ID preciso configurado nas variáveis de ambiente (.env)
-  if (ROLE_IDS.Lider && roles.has(ROLE_IDS.Lider)) return "Lider";
-  if (ROLE_IDS.Gerente && roles.has(ROLE_IDS.Gerente)) return "Gerente";
-  if (ROLE_IDS.Elite && roles.has(ROLE_IDS.Elite)) return "Elite";
-  if (ROLE_IDS.membros && roles.has(ROLE_IDS.membros)) return "membros";
-  if (ROLE_IDS.Recruta && roles.has(ROLE_IDS.Recruta)) return "Recruta";
+  if (ROLE_IDS.Lider && roles.has(ROLE_IDS.Lider)) cargosEncontrados.push("Lider");
+  if (ROLE_IDS.Gerente && roles.has(ROLE_IDS.Gerente)) cargosEncontrados.push("Gerente");
+  if (ROLE_IDS.Elite && roles.has(ROLE_IDS.Elite)) cargosEncontrados.push("Elite");
+  if (ROLE_IDS.membros && roles.has(ROLE_IDS.membros)) cargosEncontrados.push("membros");
+  if (ROLE_IDS.Recruta && roles.has(ROLE_IDS.Recruta)) cargosEncontrados.push("Recruta");
 
   // 2. Fallback: Inteligência por correspondência de Nome de Cargo no Discord
-  let matchedCargo = null;
   roles.forEach(role => {
     const name = role.name.toLowerCase();
+    const isClanRole = name.includes("5z") || name.includes("hunters") || name.includes("hunter");
     
-    if (name.includes("lider") || name.includes("líder")) {
-      matchedCargo = "Lider";
-    } else if (name.includes("gerente")) {
-      matchedCargo = "Gerente";
-    } else if (name.includes("elite")) {
-      matchedCargo = "Elite";
-    } else if (name.includes("membro")) {
-      matchedCargo = "membros";
-    } else if (name.includes("recruta")) {
-      matchedCargo = "Recruta";
+    if (isClanRole || true) {
+      if (name.includes("lider") || name.includes("líder")) {
+        if (!cargosEncontrados.includes("Lider")) cargosEncontrados.push("Lider");
+      } else if (name.includes("gerente")) {
+        if (!cargosEncontrados.includes("Gerente")) cargosEncontrados.push("Gerente");
+      } else if (name.includes("elite")) {
+        if (!cargosEncontrados.includes("Elite")) cargosEncontrados.push("Elite");
+      } else if (name.includes("membro")) {
+        if (!cargosEncontrados.includes("membros")) cargosEncontrados.push("membros");
+      } else if (name.includes("recruta")) {
+        if (!cargosEncontrados.includes("Recruta")) cargosEncontrados.push("Recruta");
+      }
     }
   });
 
-  return matchedCargo;
+  // --- REGRAS DE HIERARQUIA & DUPLICIDADE ---
+  // Se o usuário tiver qualquer cargo alto (Lider, Gerente, Elite), removemos "membros" e "Recruta" para evitar duplicar cargos baixos com cargos altos.
+  const temCargoAlto = cargosEncontrados.includes("Lider") || cargosEncontrados.includes("Gerente") || cargosEncontrados.includes("Elite");
+  
+  if (temCargoAlto) {
+    // Mantém apenas os cargos altos (que podem duplicar entre si, ex: Lider + Elite ou Gerente + Elite)
+    return cargosEncontrados.filter(c => c === "Lider" || c === "Gerente" || c === "Elite");
+  }
+
+  // Se não tem cargo alto, mas tem ambos "membros" e "Recruta", priorizamos "membros" para não duplicar entre eles
+  if (cargosEncontrados.includes("membros") && cargosEncontrados.includes("Recruta")) {
+    return ["membros"];
+  }
+
+  return cargosEncontrados;
 }
 
 /* ==========================================================
@@ -261,10 +278,12 @@ async function sincronizarMembrosDaGuilda(guild) {
     guild.members.cache.forEach(member => {
       if (member.user.bot) return; // ignora bots
       
-      const cargoDetectado = detectarCargoDoCla(member);
-      if (cargoDetectado) {
-        novosCargos[cargoDetectado].push(member.id);
-      }
+      const cargosDetectados = detectarCargosDoCla(member);
+      cargosDetectados.forEach(cargo => {
+        if (novosCargos[cargo]) {
+          novosCargos[cargo].push(member.id);
+        }
+      });
     });
 
     // Atualiza a nossa base de dados com as informações reais do Discord
@@ -359,7 +378,7 @@ async function registrarComandos() {
 // 1. EVENTO DE MUDANÇA DE CARGO DO USUÁRIO (AUTOMATIZADO!)
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   try {
-    // Verifica se os cargos de fato mudaram para evitar loops
+    // Verifica se os cargos de fato mudaram para evitar loops de processamento
     const oldRoles = oldMember.roles.cache;
     const newRoles = newMember.roles.cache;
     if (oldRoles.size === newRoles.size && oldRoles.every(r => newRoles.has(r.id))) {
@@ -369,29 +388,29 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     console.log(`🔄 Alteração de cargos detectada para o sobrevivente: ${newMember.user.tag}`);
 
     const userId = newMember.id;
-    const novoCargoDetectado = detectarCargoDoCla(newMember);
+    const novosCargosDetectados = detectarCargosDoCla(newMember);
 
     let alterouAlgo = false;
 
-    // Remove o usuário de QUALQUER categoria existente do 5Z para não duplicar na hierarquia
+    // Primeiro, removemos o usuário de todas as listas para recalcular com base no novo estado
     Object.keys(database.cargos).forEach(cargoKey => {
       const listaOriginal = database.cargos[cargoKey] || [];
       if (listaOriginal.includes(userId)) {
         database.cargos[cargoKey] = listaOriginal.filter(id => id !== userId);
         alterouAlgo = true;
-        console.log(`🗑️ Removido automaticamente do cargo anterior [${cargoKey}] devido a troca de cargo.`);
+        console.log(`🗑️ Removido temporariamente do cargo anterior [${cargoKey}] devido a troca de cargo.`);
       }
     });
 
-    // Se ele tem um novo cargo do clã, adiciona na lista correspondente
-    if (novoCargoDetectado) {
-      if (!database.cargos[novoCargoDetectado]) {
-        database.cargos[novoCargoDetectado] = [];
+    // Agora adicionamos o usuário nos cargos detectados atuais (pode ser mais de um para cargos altos!)
+    novosCargosDetectados.forEach(cargo => {
+      if (!database.cargos[cargo]) {
+        database.cargos[cargo] = [];
       }
-      database.cargos[novoCargoDetectado].push(userId);
+      database.cargos[cargo].push(userId);
       alterouAlgo = true;
-      console.log(`📥 Adicionado automaticamente ao cargo [${novoCargoDetectado}]!`);
-    }
+      console.log(`📥 Adicionado automaticamente ao cargo [${cargo}]!`);
+    });
 
     // Se houve alguma alteração real na hierarquia do banco de dados, salva e atualiza o quadro!
     if (alterouAlgo) {
