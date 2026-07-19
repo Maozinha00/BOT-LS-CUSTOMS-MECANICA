@@ -1,5 +1,5 @@
 /**
- * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT (UPGRADED) ⚔️
+ * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT ⚔️
  * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
  * 
  * Este bot possui sincronização AUTOMÁTICA de cargos (ID de cada pessoa) e 
@@ -50,7 +50,7 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // Canal do Quadro de Cargos
 
-// IDs opcionais para mapeamento direto e preciso de cargos do Discord (Configure no .env se desejar)
+// IDs opcionais para mapeamento direto e preciso de cargos do Discord
 const ROLE_IDS = {
   Lider: process.env.ROLE_LIDER_ID,
   Gerente: process.env.ROLE_GERENTE_ID,
@@ -111,7 +111,7 @@ const NOMES_CARGOS = {
 };
 
 /* ==========================================================
-   🤖 CLIENT DISCORD (Intents necessários: Guilds e GuildMembers)
+   🤖 CLIENT DISCORD (Intents necessários)
 ========================================================== */
 const client = new Client({
   intents: [
@@ -136,25 +136,30 @@ function gerarTexto() {
       : `└ *(Vazio)*`;
   }
 
-  return `☠️ **QUADRO DE CARGOS - HUNTERS ZUMBI FIVEZ** ☠️
+  return `╔════════════════════════════════════╗
+        ☣️ HUNTERS ☣️
+     「 HIERARQUIA OFICIAL 」
+╚════════════════════════════════════╝
 
-${NOMES_CARGOS.Lider}
+━━━━━━━━ 👑 LÍDER ━━━━━━━━
 ${listar("Lider")}
 
-${NOMES_CARGOS.Gerente}
+━━━━━━━━ ⚜️ GERENTES ━━━━━━
 ${listar("Gerente")}
 
-${NOMES_CARGOS.Elite}
+━━━━━━━━ 💀 ELITE ━━━━━━━━
 ${listar("Elite")}
 
-${NOMES_CARGOS.membros}
+━━━━━━━━ 🔫 MEMBROS ━━━━━━
 ${listar("membros")}
 
-${NOMES_CARGOS.Recruta}
+━━━━━━━━ 🛡️ RECRUTAS ━━━━━
 ${listar("Recruta")}
 
-📅 **Atualizado em** ${dataFormatada} às ${horaFormatada}
-⚔️ *Sobrevivência & Caça ao Extremo nos servidores FiveM*`;
+════════════════════════════
+⚔️ Clã Hunters • FiveZ Zombie
+📅 ${dataFormatada} • ${horaFormatada}
+════════════════════════════`;
 }
 
 function criarEmbed() {
@@ -240,15 +245,14 @@ function detectarCargosDoCla(member) {
   });
 
   // --- REGRAS DE HIERARQUIA & DUPLICIDADE ---
-  // Se o usuário tiver qualquer cargo alto (Lider, Gerente, Elite), removemos "membros" e "Recruta" para evitar duplicar cargos baixos com cargos altos.
   const temCargoAlto = cargosEncontrados.includes("Lider") || cargosEncontrados.includes("Gerente") || cargosEncontrados.includes("Elite");
   
   if (temCargoAlto) {
-    // Mantém apenas os cargos altos (que podem duplicar entre si, ex: Lider + Elite ou Gerente + Elite)
+    // Mantém os cargos de liderança/elite (que podem coexistir!)
     return cargosEncontrados.filter(c => c === "Lider" || c === "Gerente" || c === "Elite");
   }
 
-  // Se não tem cargo alto, mas tem ambos "membros" e "Recruta", priorizamos "membros" para não duplicar entre eles
+  // Sem cargo alto, priorizamos "membros" caso possua ambos simultaneamente
   if (cargosEncontrados.includes("membros") && cargosEncontrados.includes("Recruta")) {
     return ["membros"];
   }
@@ -257,16 +261,12 @@ function detectarCargosDoCla(member) {
 }
 
 /* ==========================================================
-   🔄 SINCRO AUTOMÁTICA: VARRER GUILDA COMPLETAMENTE
+   🔄 SINCRONIZAÇÃO COMPLETA DOS MEMBROS DO SERVIDOR (VARREDURA)
 ========================================================== */
 async function sincronizarMembrosDaGuilda(guild) {
   try {
-    console.log("🔄 Iniciando sincronização automática completa dos cargos...");
+    console.log("🔄 Realizando varredura para sincronizar todos os cargos da guilda Discord...");
     
-    // Forçar carregamento/fetch de todos os membros (Requer Intent GuildMembers ativo!)
-    await guild.members.fetch();
-    
-    // Novo objeto temporário limpo para re-preencher
     const novosCargos = {
       Lider: [],
       Gerente: [],
@@ -274,6 +274,9 @@ async function sincronizarMembrosDaGuilda(guild) {
       membros: [],
       Recruta: []
     };
+
+    // Força o Discord a carregar todos os membros ativos na memória cache
+    await guild.members.fetch();
 
     guild.members.cache.forEach(member => {
       if (member.user.bot) return; // ignora bots
@@ -286,10 +289,9 @@ async function sincronizarMembrosDaGuilda(guild) {
       });
     });
 
-    // Atualiza a nossa base de dados com as informações reais do Discord
+    // Atualiza o banco de dados
     database.cargos = novosCargos;
     salvarBanco();
-    
     console.log("✅ Sincronização automática concluída com sucesso!");
     await atualizarQuadro(guild);
   } catch (err) {
@@ -350,40 +352,37 @@ const commands = [
         .setDescription("Usuário do Discord")
         .setRequired(true)
     )
-].map(cmd => cmd.toJSON());
+];
 
 async function registrarComandos() {
-  if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
-    console.log("⚠️ Credenciais incompletas no painel de controle. Pulando registro de comandos.");
-    return;
-  }
-  
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
-    console.log("⚙️ Registrando comandos do Clã Hunters...");
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log("✅ Comandos de barra registrados com sucesso!");
-  } catch (error) {
-    console.error("❌ Falha ao registrar comandos:", error);
+    if (!TOKEN || !CLIENT_ID) {
+      return console.log("⚠️ Ignorando registro de Slash Commands - TOKEN ou CLIENT_ID ausentes.");
+    }
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
+    console.log("🔄 Atualizando comandos de barra (/)...");
+    
+    if (GUILD_ID) {
+      await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+      console.log("✅ Comandos de barra registrados localmente na guilda!");
+    } else {
+      await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+      console.log("✅ Comandos de barra registrados globalmente!");
+    }
+  } catch (err) {
+    console.error("❌ Erro ao registrar comandos de barra:", err);
   }
 }
 
 /* ==========================================================
-   🎮 EVENTOS & INTERAÇÕES
+   ⚡ ESCUTADORES DE EVENTO DO DISCORD (LISTENERS)
 ========================================================== */
 
-// 1. EVENTO DE MUDANÇA DE CARGO DO USUÁRIO (AUTOMATIZADO!)
+// 1. MONITORAMENTO AUTOMÁTICO DE ENTRADA, SAÍDA E ALTERAÇÃO DE CARGOS
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   try {
-    // Verifica se os cargos de fato mudaram para evitar loops de processamento
-    const oldRoles = oldMember.roles.cache;
-    const newRoles = newMember.roles.cache;
-    if (oldRoles.size === newRoles.size && oldRoles.every(r => newRoles.has(r.id))) {
-      return;
-    }
+    const rolesChanged = !oldMember.roles.cache.equals(newMember.roles.cache);
+    if (!rolesChanged) return;
 
     console.log(`🔄 Alteração de cargos detectada para o sobrevivente: ${newMember.user.tag}`);
 
@@ -402,7 +401,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       }
     });
 
-    // Agora adicionamos o usuário nos cargos detectados atuais (pode ser mais de um para cargos altos!)
+    // Agora adicionamos o usuário nos cargos detectados atuais
     novosCargosDetectados.forEach(cargo => {
       if (!database.cargos[cargo]) {
         database.cargos[cargo] = [];
@@ -412,7 +411,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       console.log(`📥 Adicionado automaticamente ao cargo [${cargo}]!`);
     });
 
-    // Se houve alguma alteração real na hierarquia do banco de dados, salva e atualiza o quadro!
+    // Se houve alguma alteração real, salva e atualiza o quadro!
     if (alterouAlgo) {
       salvarBanco();
       await atualizarQuadro(newMember.guild);
