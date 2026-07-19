@@ -30,7 +30,7 @@ const __dirname = path.dirname(__filename);
 
 /* ==========================================================
    🌐 MANTER ONLINE (WEB SERVER KEEP-ALIVE)
-========================================================== */
+ ========================================================== */
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -44,7 +44,7 @@ app.listen(PORT, "0.0.0.0", () => {
 
 /* ==========================================================
    🔑 CONFIGURAÇÕES DE CREDENCIAIS (VARIÁVEIS DE AMBIENTE)
-========================================================== */
+ ========================================================== */
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
@@ -61,7 +61,7 @@ const ROLE_IDS = {
 
 /* ==========================================================
    💾 PERSISTÊNCIA DE DADOS (Banco de dados local em arquivo)
-========================================================== */
+ ========================================================== */
 const DB_PATH = path.join(__dirname, "database.json");
 
 let database = {
@@ -79,7 +79,7 @@ let database = {
 function salvarBanco() {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(database, null, 2), "utf-8");
-    console.log("💾 Banco de dados local atualizado com sucesso!");
+    console.log("💾 Banco de dados local updated com sucesso!");
   } catch (err) {
     console.error("❌ Erro ao salvar banco de dados:", err);
   }
@@ -112,7 +112,7 @@ const NOMES_CARGOS = {
 
 /* ==========================================================
    🤖 CLIENT DISCORD (Intents necessários: Guilds e GuildMembers)
-========================================================== */
+ ========================================================== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -123,28 +123,37 @@ const client = new Client({
 
 /* ==========================================================
    🧠 CONSTRUTOR DE EMBED DA HIERARQUIA
-========================================================== */
+ ========================================================== */
 function limparNome(nome) {
   if (!nome) return "";
-  let partes = nome.split(/[s_|[]()-•·\/]+/);
-  const palavrasProibidas = ["hunters", "hunter", "5z", "cla", "clã", "lider", "líder", "gerente", "elite", "membros", "membro", "recruta"];
   
+  // Divide o nome usando separadores comuns como |, _, -, •, [], (), etc.
+  let partes = nome.split(/[\s_|\[\]\(\)\-\•\·\\\/]+/);
+  const palavrasProibidas = [
+    "hunters", "hunter", "5z", "cla", "clã", 
+    "lider", "líder", "gerente", "elite", 
+    "membros", "membro", "recruta"
+  ];
+  
+  // Limpa espaços e filtra o que for número (ID no final) ou palavra proibida/tags do clã
   partes = partes.map(p => p.trim()).filter(p => {
     if (!p) return false;
-    if (/^d+$/.test(p)) return false;
-    if (palavrasProibidas.includes(p.toLowerCase())) return false;
+    if (/^\d+$/.test(p)) return false; // Remove se for apenas números
+    if (palavrasProibidas.includes(p.toLowerCase())) return false; // Remove se for tag do clã
     return true;
   });
   
+  // Se sobrou alguma parte válida do nome (ex: "Jones"), junta elas
   if (partes.length > 0) {
     return partes.join(" ");
   }
   
+  // Fallback caso a lógica de cima remova tudo por engano
   let limpo = nome
-    .replace(/[s_|-·•/\[({]+(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[])}]?/gi, "")
-    .replace(/[[({](hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[])}]/gi, "")
-    .replace(/[s_|-·•/\|]+[0-9]+$/g, "")
-    .replace(/[s_|-·•/\|]+$/g, "")
+    .replace(/[\s_|\-·•\/\\\[\({]+(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[\]\)}]?/gi, "")
+    .replace(/[\[\({](hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[\]\)}]/gi, "")
+    .replace(/[\s_|\-·•\/\\|]+[0-9]+$/g, "")
+    .replace(/[\s_|\-·•\/\\|]+$/g, "")
     .trim();
     
   return limpo || nome;
@@ -226,7 +235,7 @@ function criarEmbed(guild) {
 
 /* ==========================================================
    📤 SINCRONIZAR MENSAGEM DO EMBED (Quadro Fixo)
-========================================================== */
+ ========================================================== */
 async function atualizarQuadro(guild) {
   try {
     if (!guild) return console.log("⚠️ Guild não fornecida para atualizar quadro.");
@@ -263,7 +272,7 @@ async function atualizarQuadro(guild) {
 
 /* ==========================================================
    🔍 IDENTIFICADOR AUTOMÁTICO DE CARGO DO CLÃ (5Z)
-========================================================== */
+ ========================================================== */
 function detectarCargosDoCla(member) {
   const roles = member.roles.cache;
   const cargosEncontrados = [];
@@ -307,7 +316,7 @@ function detectarCargosDoCla(member) {
   }
 
   // Se não tem cargo alto, mas tem ambos "membros" e "Recruta", priorizamos "membros" para não duplicar entre eles
-  if (cargosEncontrados.includes("membros") && cargosEncontrados.includes("Recruta")) {
+  if (cargosEncontrados.includes("membros") && cargosEnaurados.includes("Recruta")) {
     return ["membros"];
   }
 
@@ -316,7 +325,7 @@ function detectarCargosDoCla(member) {
 
 /* ==========================================================
    🔄 SINCRO AUTOMÁTICA: VARRER GUILDA COMPLETAMENTE
-========================================================== */
+ ========================================================== */
 async function sincronizarMembrosDaGuilda(guild) {
   try {
     console.log("🔄 Iniciando sincronização automática completa dos cargos...");
@@ -357,7 +366,7 @@ async function sincronizarMembrosDaGuilda(guild) {
 
 /* ==========================================================
    📜 REGISTRO DE COMANDOS DE BARRA (/COMANDOS)
-========================================================== */
+ ========================================================== */
 const commands = [
   new SlashCommandBuilder()
     .setName("quadro")
@@ -431,7 +440,7 @@ async function registrarComandos() {
 
 /* ==========================================================
    🎮 EVENTOS & INTERAÇÕES
-========================================================== */
+ ========================================================== */
 
 // 1. EVENTO DE MUDANÇA DE CARGO DO USUÁRIO (AUTOMATIZADO!)
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
@@ -593,7 +602,7 @@ client.on("interactionCreate", async interaction => {
 
 /* ==========================================================
    🚀 BOT PRONTO
-========================================================== */
+ ========================================================== */
 client.once("ready", async () => {
   console.log(`🔥 Bot conectado com sucesso como: ${client.user.tag}`);
   
