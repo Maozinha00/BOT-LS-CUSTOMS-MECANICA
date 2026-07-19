@@ -1,11 +1,10 @@
-
-let database = {
-  lastMessageId: "",
-  cargos: {
-    Lider: [],
-    Gerente: [],
-    Elite: [],
-    membros: [],
-    Recruta: []
+{
+  "lastMessageId": "",
+  "cargos": {
+    "Lider": [],
+    "Gerente": [],
+    "Elite": [],
+    "membros": [],
+    "Recruta": []
   }
-};
+}
