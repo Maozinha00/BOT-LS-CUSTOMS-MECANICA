@@ -147,8 +147,8 @@ function criarEmbed() {
     .setTitle("⚔️ CLÃ HUNTERS - HIERARQUIA OFICIAL ⚔️")
     .setColor("#16a34a") // Verde Neon Tóxico
     .setDescription(gerarTexto())
-    .setThumbnail("https://i.imgur.com/kS3fFku.jpeg=200")
-    .setImage("https://i.imgur.com/kS3fFku.jpeg=1200")
+    .setThumbnail("https://i.imgur.com/kS3fFku.jpeg")
+    .setImage("https://i.imgur.com/kS3fFku.jpeg")
     .setFooter({ text: "Sistema Automatizado Clã Hunters • Hunters Zumbi Fivez" })
     .setTimestamp();
 }
@@ -266,7 +266,7 @@ async function registrarComandos() {
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const { commandName, options, guild } = interaction;
+  const { commandName, options, guild, user: executingUser } = interaction;
   const cargo = options.getString("cargo");
   const user = options.getUser("sobrevivente");
 
@@ -277,54 +277,83 @@ client.on("interactionCreate", async interaction => {
       return interaction.reply({ embeds: [criarEmbed()] });
     }
 
-    if (commandName === "addcargo") {
-      if (!cargo) return;
-
-      // Remove o usuário de qualquer outro cargo antes para não duplicar
-      Object.keys(database.cargos).forEach(k => {
-        database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
-      });
-
-      // Adiciona ao cargo novo
-      if (!database.cargos[cargo]) {
-        database.cargos[cargo] = [];
-      }
-      database.cargos[cargo].push(user.id);
-      salvarBanco();
-
-      await interaction.reply({
-        content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
-        ephemeral: false
-      });
-
-      if (guild) {
-        await atualizarQuadro(guild);
-      }
-    }
-
-    if (commandName === "removercargo") {
-      if (!cargo || !database.cargos[cargo]) return;
-
-      const antes = database.cargos[cargo].length;
-      database.cargos[cargo] = database.cargos[cargo].filter(id => id !== user.id);
-      const depois = database.cargos[cargo].length;
-
-      if (antes === depois) {
+    if (commandName === "addcargo" || commandName === "removercargo") {
+      const member = interaction.member;
+      if (!member) {
         return interaction.reply({
-          content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
+          content: "❌ Este comando só pode ser usado dentro do servidor do Clã Hunters.",
           ephemeral: true
         });
       }
 
-      salvarBanco();
+      // 1. Verificar se o executor está registrado no banco de dados local como Lider ou Gerente
+      const isLiderDb = database.cargos.Lider && database.cargos.Lider.includes(executingUser.id);
+      const isGerenteDb = database.cargos.Gerente && database.cargos.Gerente.includes(executingUser.id);
 
-      await interaction.reply({
-        content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
-        ephemeral: false
-      });
+      // 2. Verificar se o executor possui algum cargo no Discord com "gerente" ou "lider" no nome, permissão de Administrador ou se possui o ID de cargo específico 1515125822795546715
+      const possessesAuthorizedRole = member.roles.cache.some(role => {
+        const name = role.name.toLowerCase();
+        return name.includes("gerente") || name.includes("lider") || name.includes("líder") || role.id === "1515125822795546715";
+      }) || member.permissions.has("Administrator");
 
-      if (guild) {
-        await atualizarQuadro(guild);
+      const authorized = isLiderDb || isGerenteDb || possessesAuthorizedRole;
+
+      if (!authorized) {
+        return interaction.reply({
+          content: "❌ **Acesso Negado!** Sobrevivente, apenas a **Gerência** ou a **Liderança** do Clã Hunters possui autoridade para gerenciar a hierarquia.",
+          ephemeral: true
+        });
+      }
+
+      if (commandName === "addcargo") {
+        if (!cargo) return;
+
+        // Remove o usuário de qualquer outro cargo antes para não duplicar
+        Object.keys(database.cargos).forEach(k => {
+          database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
+        });
+
+        // Adiciona ao cargo novo
+        if (!database.cargos[cargo]) {
+          database.cargos[cargo] = [];
+        }
+        database.cargos[cargo].push(user.id);
+        salvarBanco();
+
+        await interaction.reply({
+          content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
+          ephemeral: false
+        });
+
+        if (guild) {
+          await atualizarQuadro(guild);
+        }
+      }
+
+      if (commandName === "removercargo") {
+        if (!cargo || !database.cargos[cargo]) return;
+
+        const antes = database.cargos[cargo].length;
+        database.cargos[cargo] = database.cargos[cargo].filter(id => id !== user.id);
+        const depois = database.cargos[cargo].length;
+
+        if (antes === depois) {
+          return interaction.reply({
+            content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
+            ephemeral: true
+          });
+        }
+
+        salvarBanco();
+
+        await interaction.reply({
+          content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
+          ephemeral: false
+        });
+
+        if (guild) {
+          await atualizarQuadro(guild);
+        }
       }
     }
   } catch (err) {
