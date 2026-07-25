@@ -2,8 +2,11 @@
  * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT (UPGRADED) ⚔️
  * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
  * 
- * ✨ RECURSO NOVO: Quando um membro perde/tem um cargo removido, o bot
- * remove AUTOMATICAMENTE a TAG do clã e o ID de FiveM do apelido no Discord!
+ * ✨ RECURSOS AUTO-SYNC:
+ * 1. Quando um membro PERDE O CARGO ou SAI DO SERVIDOR, o bot o remove
+ *    IMEDIATAMENTE da hierarquia e atualiza o quadro no Discord.
+ * 2. Quando o cargo é removido, o bot retira AUTOMATICAMENTE a TAG do clã
+ *    e o ID do FiveM do apelido no Discord!
  * 
  * Requisitos: Ative "SERVER MEMBERS INTENT" no Discord Developer Portal!
  */
@@ -149,14 +152,13 @@ function limparNomeEId(nome) {
 async function retirarTagEIdDoMembro(member) {
   try {
     if (!member || !member.manageable) {
-      console.log(`⚠️ Não foi possível alterar o apelido de ${member?.user?.tag || "membro"} (Sem permissão/Dono do Server).`);
+      console.log(`⚠️ Não foi possível alterar apelido de ${member?.user?.tag || "membro"} (Sem permissão/Dono/Sem permissão de Nickname).`);
       return false;
     }
 
     const nomeAtual = member.displayName || member.user.username;
     const nomeLimpo = limparNomeEId(nomeAtual);
 
-    // Se o nome atual tiver tag/ID que foi limpo, atualizamos no Discord
     if (nomeAtual !== nomeLimpo) {
       await member.setNickname(nomeLimpo);
       console.log(`✂️ TAG & ID Removidos com Sucesso de [${nomeAtual}] ➔ Novo Apelido: [${nomeLimpo}]`);
@@ -184,39 +186,43 @@ function gerarTexto(guild) {
   const dataFormatada = data.toLocaleDateString("pt-BR");
   const horaFormatada = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
+  let houveramRemocoes = false;
+
   function listar(cargoKey) {
     const lista = database.cargos[cargoKey] || [];
-    if (!lista.length) return "└ *(Vazio)*";
+    const idsValidos = [];
+    const novaListaCargo = [];
 
-    const linhas = [];
     for (const id of lista) {
-      let nomeFinal = null;
       if (guild) {
+        // Se a guilda estiver disponível, verifica se o membro ainda está no servidor
         const member = guild.members.cache.get(id);
         if (member) {
           const nomeOriginal = member.displayName || member.user.username;
-          nomeFinal = limparNomeEId(nomeOriginal);
+          const nomeFinal = limparNomeEId(nomeOriginal);
+          idsValidos.push(`└ ${nomeFinal}`);
+          novaListaCargo.push(id);
+        } else {
+          console.log(`🧹 Membro ID ${id} não está mais no servidor. Removendo do cargo [${cargoKey}].`);
+          houveramRemocoes = true;
         }
-      }
-
-      if (!nomeFinal) {
+      } else {
         const user = client.users.cache.get(id);
-        if (user) {
-          nomeFinal = limparNomeEId(user.username);
-        }
+        const nomeFinal = user ? limparNomeEId(user.username) : `Sobrevivente_${id}`;
+        idsValidos.push(`└ ${nomeFinal}`);
+        novaListaCargo.push(id);
       }
-
-      if (!nomeFinal) {
-        nomeFinal = "Sobrevivente";
-      }
-
-      linhas.push(`└ ${nomeFinal}`);
     }
 
-    return linhas.join("\n");
+    if (guild && houveramRemocoes) {
+      database.cargos[cargoKey] = novaListaCargo;
+    }
+
+    if (!idsValidos.length) return "└ *(Vazio)*";
+    return idsValidos.join("\n");
   }
 
-  return `╔════════════════════════════════════╗
+  const texto = `╔════════════════════════════════════╗
         ☣️ HUNTERS ☣️
      「 HIERARQUIA OFICIAL 」
 ╚════════════════════════════════════╝
@@ -240,6 +246,13 @@ ${listar("Recruta")}
 ⚔️ Clã Hunters • FiveZ Zombie
 📅 ${dataFormatada} • ${horaFormatada}
 ════════════════════════════`;
+
+  if (houveramRemocoes) {
+    salvarBanco();
+    console.log("💾 Banco de dados salvo automaticamente após remover membros inativos do Discord.");
+  }
+
+  return texto;
 }
 
 function criarEmbed(guild) {
@@ -257,23 +270,23 @@ async function atualizarQuadro(guild) {
   try {
     if (!guild) return console.log("⚠️ Guild não fornecida para atualizar quadro.");
     
-    const canal = await guild.channels.fetch(CHANNEL_ID);
+    const canal = await guild.channels.fetch(CHANNEL_ID).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) {
-      return console.log("⚠️ Canal não encontrado ou não é canal de texto!");
+      return console.log("⚠️ Canal do quadro não encontrado ou inválido!");
     }
 
     const embed = criarEmbed(guild);
 
     if (database.lastMessageId) {
       try {
-        const msg = await canal.messages.fetch(database.lastMessageId);
+        const msg = await canal.messages.fetch(database.lastMessageId).catch(() => null);
         if (msg) {
           await msg.edit({ embeds: [embed] });
-          console.log("✅ Quadro de Cargos editado com sucesso!");
+          console.log("✅ Quadro de Cargos editado e atualizado com sucesso!");
           return;
         }
       } catch (err) {
-        console.log("⚠️ Mensagem anterior não encontrada. Enviando um novo quadro.");
+        console.log("⚠️ Mensagem anterior não encontrada. Publicando um novo quadro.");
       }
     }
 
@@ -317,7 +330,6 @@ function detectarCargosDoCla(member) {
     return cargosEncontrados.filter(c => c === "Lider" || c === "Gerente" || c === "Elite");
   }
 
-  // Corrigido typo "cargosEnaurados" -> "cargosEncontrados"
   if (cargosEncontrados.includes("membros") && cargosEncontrados.includes("Recruta")) {
     return ["membros"];
   }
@@ -327,7 +339,7 @@ function detectarCargosDoCla(member) {
 
 async function sincronizarMembrosDaGuilda(guild) {
   try {
-    console.log("🔄 Sincronizando cargos da guilda...");
+    console.log("🔄 Sincronizando cargos da guilda e limpando quem saiu...");
     await guild.members.fetch();
     
     const novosCargos = {
@@ -337,6 +349,11 @@ async function sincronizarMembrosDaGuilda(guild) {
       membros: [],
       Recruta: []
     };
+
+    const antigosMembrosComCargo = new Set();
+    Object.values(database.cargos).forEach(lista => {
+      lista.forEach(id => antigosMembrosComCargo.add(id));
+    });
 
     guild.members.cache.forEach(member => {
       if (member.user.bot) return;
@@ -348,10 +365,26 @@ async function sincronizarMembrosDaGuilda(guild) {
       });
     });
 
+    const novosMembrosComCargo = new Set();
+    Object.values(novosCargos).forEach(lista => {
+      lista.forEach(id => novosMembrosComCargo.add(id));
+    });
+
+    // Se um membro tinha cargo antes mas agora não tem mais, retira TAG & ID do apelido
+    for (const oldId of antigosMembrosComCargo) {
+      if (!novosMembrosComCargo.has(oldId)) {
+        const member = guild.members.cache.get(oldId);
+        if (member) {
+          console.log(`✂️ Membro ${member.user.tag} perdeu o cargo no clã! Retirando TAG e ID...`);
+          await retirarTagEIdDoMembro(member);
+        }
+      }
+    }
+
     database.cargos = novosCargos;
     salvarBanco();
     
-    console.log("✅ Sincronização automática concluída!");
+    console.log("✅ Sincronização automática e limpeza concluídas!");
     await atualizarQuadro(guild);
   } catch (err) {
     console.error("❌ Erro ao sincronizar membros:", err);
@@ -359,7 +392,37 @@ async function sincronizarMembrosDaGuilda(guild) {
 }
 
 /* ==========================================================
-   🔄 EVENTO: QUANDO TIRAR O CARGO (MUDANÇA DE CARGO)
+   🚨 EVENTO: QUANDO O MEMBRO SAI DO SERVIDOR (LEAVE/KICK/BAN)
+ ========================================================== */
+client.on("guildMemberRemove", async (member) => {
+  try {
+    const userId = member.id;
+    console.log(`🚨 Membro ${member.user.tag} (ID: ${userId}) SAIU do servidor Discord!`);
+
+    let alterouAlgo = false;
+
+    // Remove das listas de hierarquia do banco de dados
+    Object.keys(database.cargos).forEach(cargoKey => {
+      const listaOriginal = database.cargos[cargoKey] || [];
+      if (listaOriginal.includes(userId)) {
+        database.cargos[cargoKey] = listaOriginal.filter(id => id !== userId);
+        alterouAlgo = true;
+        console.log(`🗑️ Removido automaticamente do cargo [${cargoKey}] porque saiu do server.`);
+      }
+    });
+
+    if (alterouAlgo) {
+      salvarBanco();
+      console.log("🔄 Atualizando Quadro de Cargos no Discord após saída de membro...");
+      await atualizarQuadro(member.guild);
+    }
+  } catch (err) {
+    console.error("❌ Erro no evento guildMemberRemove:", err);
+  }
+});
+
+/* ==========================================================
+   🔄 EVENTO: QUANDO TIRAR O CARGO OU MUDAR ROLE
  ========================================================== */
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   try {
@@ -387,12 +450,10 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       }
     });
 
-    // Se o usuário perdeu todos os cargos do clã
     if (novosCargosDetectados.length === 0) {
       perdeuCargosDoCla = true;
     }
 
-    // Adiciona aos novos cargos detectados
     novosCargosDetectados.forEach(cargo => {
       if (!database.cargos[cargo]) database.cargos[cargo] = [];
       database.cargos[cargo].push(userId);
@@ -400,7 +461,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       console.log(`📥 Adicionado ao cargo [${cargo}]`);
     });
 
-    // ⚡ QUANDO TIRAR O CARGO: REMOVE A TAG E O ID DO DISCORD NICKNAME!
     if (perdeuCargosDoCla) {
       console.log(`✂️ Cargo removido! Retirando TAG e ID do apelido no Discord de ${newMember.user.tag}...`);
       await retirarTagEIdDoMembro(newMember);
@@ -509,7 +569,6 @@ client.on("interactionCreate", async interaction => {
       database.cargos[cargo].push(user.id);
       salvarBanco();
 
-      // Opcional: Adicionar cargo no Discord se ID configurado
       if (ROLE_IDS[cargo] && guild) {
         try {
           const targetMember = await guild.members.fetch(user.id);
@@ -524,7 +583,10 @@ client.on("interactionCreate", async interaction => {
     if (commandName === "removercargo") {
       if (!cargo || !user) return;
       
-      database.cargos[cargo] = (database.cargos[cargo] || []).filter(id => id !== user.id);
+      // Remove de todas as listas no banco
+      Object.keys(database.cargos).forEach(k => {
+        database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
+      });
       salvarBanco();
 
       let tagRemovidaMsg = "";
@@ -532,11 +594,9 @@ client.on("interactionCreate", async interaction => {
         try {
           const targetMember = await guild.members.fetch(user.id);
           if (targetMember) {
-            // Remove cargo no Discord se ID configurado
             if (ROLE_IDS[cargo]) {
               await targetMember.roles.remove(ROLE_IDS[cargo]).catch(() => {});
             }
-            // ✂️ RETIRA A TAG E O ID DO DISCORD NICKNAME!
             const limpo = await retirarTagEIdDoMembro(targetMember);
             if (limpo) tagRemovidaMsg = "\n✂️ **TAG e ID do FiveM foram removidos do apelido no Discord!**";
           }
