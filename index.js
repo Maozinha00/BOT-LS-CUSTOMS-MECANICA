@@ -57,7 +57,7 @@ const ROLE_IDS = {
   Gerente: process.env.ROLE_GERENTE_ID,
   Elite: process.env.ROLE_ELITE_ID,
   membros: process.env.ROLE_MEMBROS_ID,
-  Recruta: process.env.ROLE_RECRUTA_ID
+  Recruta: process.env.ROLE_RECRUTA_ID,
 };
 
 /* ==========================================================
