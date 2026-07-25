@@ -2,10 +2,10 @@
  * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT (UPGRADED) ⚔️
  * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
  * 
- * Este bot possui sincronização AUTOMÁTICA de cargos (ID de cada pessoa) e 
- * mantém comandos manuais de adição/remoção em perfeito funcionamento!
+ * ✨ RECURSO NOVO: Quando um membro perde/tem um cargo removido, o bot
+ * remove AUTOMATICAMENTE a TAG do clã e o ID de FiveM do apelido no Discord!
  * 
- * Requisitos: Ative a opção "SERVER MEMBERS INTENT" no Discord Developer Portal!
+ * Requisitos: Ative "SERVER MEMBERS INTENT" no Discord Developer Portal!
  */
 
 import "dotenv/config";
@@ -24,7 +24,6 @@ import {
   TextChannel
 } from "discord.js";
 
-// Resolver __dirname no formato ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -34,7 +33,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (_, res) => {
+app.get("/ping", (_, res) => {
   res.send("🔥 Bot Clã Hunters está 100% Ativo e Online! ⚔️");
 });
 
@@ -50,7 +49,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const CHANNEL_ID = process.env.CHANNEL_ID || "1527817862532694026"; // Canal do Quadro de Cargos
 
-// IDs opcionais para mapeamento direto e preciso de cargos do Discord
 const ROLE_IDS = {
   Lider: process.env.ROLE_LIDER_ID,
   Gerente: process.env.ROLE_GERENTE_ID,
@@ -75,17 +73,15 @@ let database = {
   }
 };
 
-// Função para salvar a database no arquivo local
 function salvarBanco() {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(database, null, 2), "utf-8");
-    console.log("💾 Banco de dados local updated com sucesso!");
+    console.log("💾 Banco de dados local atualizado com sucesso!");
   } catch (err) {
     console.error("❌ Erro ao salvar banco de dados:", err);
   }
 }
 
-// Carrega os dados persistidos se o arquivo já existir
 if (fs.existsSync(DB_PATH)) {
   try {
     const fileContent = fs.readFileSync(DB_PATH, "utf-8");
@@ -101,7 +97,6 @@ if (fs.existsSync(DB_PATH)) {
   salvarBanco();
 }
 
-// Formatação Visual Oficial dos Cargos baseados no Clã Hunters
 const NOMES_CARGOS = {
   Lider: "☣️ **· Lider** 👑",
   Gerente: "☣️ **· Gerentes FiveZ**",
@@ -111,53 +106,78 @@ const NOMES_CARGOS = {
 };
 
 /* ==========================================================
-   🤖 CLIENT DISCORD (Intents necessários: Guilds e GuildMembers)
+   🧹 FUNÇÃO DE REMOÇÃO DE TAG E ID DO NOME (NICKNAME)
+ ========================================================== */
+function limparNomeEId(nome) {
+  if (!nome) return "";
+
+  let temp = nome;
+
+  // 1. Remove tags do clã e cargos comuns
+  const tagsPadrao = [
+    /\[\s*(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membros|membro|recruta)\s*\]/gi,
+    /\(\s*(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membros|membro|recruta)\s*\)/gi,
+    /\{\s*(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membros|membro|recruta)\s*\}/gi,
+    /☣️/gi, /👑/gi, /💀/gi, /🔫/gi, /🔰/gi, /⚡/gi,
+    /\b(hunters|hunter|5z|cla|clã)\b/gi
+  ];
+
+  for (const regex of tagsPadrao) {
+    temp = temp.replace(regex, "");
+  }
+
+  // 2. Remove ID numérico no final ou entre colchetes/parênteses (ex: "| 1542", "#1542", "[1542]")
+  temp = temp
+    .replace(/[\s|_|\-·•\/\\|]*[#|id:]*\s*\d{1,6}\s*$/gi, "")
+    .replace(/[\s|_|\-·•\/\\|]*\[\d{1,6}\]/g, "")
+    .replace(/[\s|_|\-·•\/\\|]*\(\d{1,6}\)/g, "")
+    .replace(/^[\s|_|\-·•\/\\|]*\d{1,6}[\s|_|\-·•\/\\|]+/g, "");
+
+  // 3. Remove separadores e espaços sobrantes
+  temp = temp
+    .replace(/^[\s|_|\-·•\/\\|\[\]\(\)\{\}]+/g, "")
+    .replace(/[\s|_|\-·•\/\\|\[\]\(\)\{\}]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return temp || nome.replace(/[^a-zA-Z0-9_ ]/g, "").trim() || nome;
+}
+
+/* ==========================================================
+   ✂️ REMOVER TAG E ID DO MEMBRO NO DISCORD (SET NICKNAME)
+ ========================================================== */
+async function retirarTagEIdDoMembro(member) {
+  try {
+    if (!member || !member.manageable) {
+      console.log(`⚠️ Não foi possível alterar o apelido de ${member?.user?.tag || "membro"} (Sem permissão/Dono do Server).`);
+      return false;
+    }
+
+    const nomeAtual = member.displayName || member.user.username;
+    const nomeLimpo = limparNomeEId(nomeAtual);
+
+    // Se o nome atual tiver tag/ID que foi limpo, atualizamos no Discord
+    if (nomeAtual !== nomeLimpo) {
+      await member.setNickname(nomeLimpo);
+      console.log(`✂️ TAG & ID Removidos com Sucesso de [${nomeAtual}] ➔ Novo Apelido: [${nomeLimpo}]`);
+      return true;
+    }
+  } catch (err) {
+    console.error(`❌ Erro ao alterar apelido no Discord para ${member?.user?.tag}:`, err.message);
+  }
+  return false;
+}
+
+/* ==========================================================
+   🤖 CLIENT DISCORD
  ========================================================== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers, // Essencial para listar membros e detectar mudança de cargos!
+    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildPresences
   ]
 });
-
-/* ==========================================================
-   🧠 CONSTRUTOR DE EMBED DA HIERARQUIA
- ========================================================== */
-function limparNome(nome) {
-  if (!nome) return "";
-  
-  // Divide o nome usando separadores comuns como |, _, -, •, [], (), etc.
-  let partes = nome.split(/[\s_|\[\]\(\)\-\•\·\\\/]+/);
-  const palavrasProibidas = [
-    "hunters", "hunter", "5z", "cla", "clã", 
-    "lider", "líder", "gerente", "elite", 
-    "membros", "membro", "recruta"
-  ];
-  
-  // Limpa espaços e filtra o que for número (ID no final) ou palavra proibida/tags do clã
-  partes = partes.map(p => p.trim()).filter(p => {
-    if (!p) return false;
-    if (/^\d+$/.test(p)) return false; // Remove se for apenas números
-    if (palavrasProibidas.includes(p.toLowerCase())) return false; // Remove se for tag do clã
-    return true;
-  });
-  
-  // Se sobrou alguma parte válida do nome (ex: "Jones"), junta elas
-  if (partes.length > 0) {
-    return partes.join(" ");
-  }
-  
-  // Fallback caso a lógica de cima remova tudo por engano
-  let limpo = nome
-    .replace(/[\s_|\-·•\/\\\[\({]+(hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[\]\)}]?/gi, "")
-    .replace(/[\[\({](hunters|hunter|5z|cla|clã|lider|líder|gerente|elite|membro|recruta)[\]\)}]/gi, "")
-    .replace(/[\s_|\-·•\/\\|]+[0-9]+$/g, "")
-    .replace(/[\s_|\-·•\/\\|]+$/g, "")
-    .trim();
-    
-  return limpo || nome;
-}
 
 function gerarTexto(guild) {
   const data = new Date();
@@ -175,14 +195,14 @@ function gerarTexto(guild) {
         const member = guild.members.cache.get(id);
         if (member) {
           const nomeOriginal = member.displayName || member.user.username;
-          nomeFinal = limparNome(nomeOriginal);
+          nomeFinal = limparNomeEId(nomeOriginal);
         }
       }
 
       if (!nomeFinal) {
         const user = client.users.cache.get(id);
         if (user) {
-          nomeFinal = limparNome(user.username);
+          nomeFinal = limparNomeEId(user.username);
         }
       }
 
@@ -225,7 +245,7 @@ ${listar("Recruta")}
 function criarEmbed(guild) {
   return new EmbedBuilder()
     .setTitle("⚔️ CLÃ HUNTERS - HIERARQUIA OFICIAL ⚔️")
-    .setColor("#16a34a") // Verde Neon Tóxico
+    .setColor("#16a34a")
     .setDescription(gerarTexto(guild))
     .setThumbnail("https://i.imgur.com/kS3fFku.jpeg")
     .setImage("https://i.imgur.com/kS3fFku.jpeg")
@@ -233,16 +253,13 @@ function criarEmbed(guild) {
     .setTimestamp();
 }
 
-/* ==========================================================
-   📤 SINCRONIZAR MENSAGEM DO EMBED (Quadro Fixo)
- ========================================================== */
 async function atualizarQuadro(guild) {
   try {
     if (!guild) return console.log("⚠️ Guild não fornecida para atualizar quadro.");
     
     const canal = await guild.channels.fetch(CHANNEL_ID);
     if (!canal || !(canal instanceof TextChannel)) {
-      return console.log("⚠️ Canal não encontrado ou não é um canal de texto!");
+      return console.log("⚠️ Canal não encontrado ou não é canal de texto!");
     }
 
     const embed = criarEmbed(guild);
@@ -256,11 +273,10 @@ async function atualizarQuadro(guild) {
           return;
         }
       } catch (err) {
-        console.log("⚠️ Mensagem anterior não encontrada ou deletada. Enviando um novo quadro.");
+        console.log("⚠️ Mensagem anterior não encontrada. Enviando um novo quadro.");
       }
     }
 
-    // Se não editou, envia uma nova mensagem e fixa a ID dela
     const novaMsg = await canal.send({ embeds: [embed] });
     database.lastMessageId = novaMsg.id;
     salvarBanco();
@@ -270,70 +286,50 @@ async function atualizarQuadro(guild) {
   }
 }
 
-/* ==========================================================
-   🔍 IDENTIFICADOR AUTOMÁTICO DE CARGO DO CLÃ (5Z)
- ========================================================== */
 function detectarCargosDoCla(member) {
   const roles = member.roles.cache;
   const cargosEncontrados = [];
 
-  // 1. Tentar por ID preciso configurado nas variáveis de ambiente (.env)
   if (ROLE_IDS.Lider && roles.has(ROLE_IDS.Lider)) cargosEncontrados.push("Lider");
   if (ROLE_IDS.Gerente && roles.has(ROLE_IDS.Gerente)) cargosEncontrados.push("Gerente");
   if (ROLE_IDS.Elite && roles.has(ROLE_IDS.Elite)) cargosEncontrados.push("Elite");
   if (ROLE_IDS.membros && roles.has(ROLE_IDS.membros)) cargosEncontrados.push("membros");
   if (ROLE_IDS.Recruta && roles.has(ROLE_IDS.Recruta)) cargosEncontrados.push("Recruta");
 
-  // 2. Fallback: Inteligência por correspondência de Nome de Cargo no Discord
   roles.forEach(role => {
     const name = role.name.toLowerCase();
-    
-    // Filtro para cargos pertencentes ao clã (5Z ou Hunters)
-    const isClanRole = name.includes("5z") || name.includes("hunters") || name.includes("hunter");
-    
-    if (isClanRole || true) {
-      if (name.includes("lider") || name.includes("líder")) {
-        if (!cargosEncontrados.includes("Lider")) cargosEncontrados.push("Lider");
-      } else if (name.includes("gerente")) {
-        if (!cargosEncontrados.includes("Gerente")) cargosEncontrados.push("Gerente");
-      } else if (name.includes("elite")) {
-        if (!cargosEncontrados.includes("Elite")) cargosEncontrados.push("Elite");
-      } else if (name.includes("membro")) {
-        if (!cargosEncontrados.includes("membros")) cargosEncontrados.push("membros");
-      } else if (name.includes("recruta")) {
-        if (!cargosEncontrados.includes("Recruta")) cargosEncontrados.push("Recruta");
-      }
+    if (name.includes("lider") || name.includes("líder")) {
+      if (!cargosEncontrados.includes("Lider")) cargosEncontrados.push("Lider");
+    } else if (name.includes("gerente")) {
+      if (!cargosEncontrados.includes("Gerente")) cargosEncontrados.push("Gerente");
+    } else if (name.includes("elite")) {
+      if (!cargosEncontrados.includes("Elite")) cargosEncontrados.push("Elite");
+    } else if (name.includes("membro")) {
+      if (!cargosEncontrados.includes("membros")) cargosEncontrados.push("membros");
+    } else if (name.includes("recruta")) {
+      if (!cargosEncontrados.includes("Recruta")) cargosEncontrados.push("Recruta");
     }
   });
 
-  // --- REGRAS DE HIERARQUIA & DUPLICIDADE ---
-  // Se o usuário tiver qualquer cargo alto (Lider, Gerente, Elite), removemos "membros" e "Recruta" para evitar duplicar cargos baixos com cargos altos.
   const temCargoAlto = cargosEncontrados.includes("Lider") || cargosEncontrados.includes("Gerente") || cargosEncontrados.includes("Elite");
   
   if (temCargoAlto) {
-    // Mantém apenas os cargos altos (que podem duplicar entre si, ex: Lider + Elite ou Gerente + Elite)
     return cargosEncontrados.filter(c => c === "Lider" || c === "Gerente" || c === "Elite");
   }
 
-  // Se não tem cargo alto, mas tem ambos "membros" e "Recruta", priorizamos "membros" para não duplicar entre eles
-  if (cargosEncontrados.includes("membros") && cargosEnaurados.includes("Recruta")) {
+  // Corrigido typo "cargosEnaurados" -> "cargosEncontrados"
+  if (cargosEncontrados.includes("membros") && cargosEncontrados.includes("Recruta")) {
     return ["membros"];
   }
 
   return cargosEncontrados;
 }
 
-/* ==========================================================
-   🔄 SINCRO AUTOMÁTICA: VARRER GUILDA COMPLETAMENTE
- ========================================================== */
 async function sincronizarMembrosDaGuilda(guild) {
   try {
-    console.log("🔄 Iniciando sincronização automática completa dos cargos...");
-    
-    // Forçar carregamento/fetch de todos os membros (Requer Intent GuildMembers ativo!)
+    console.log("🔄 Sincronizando cargos da guilda...");
     await guild.members.fetch();
     
-    // Novo objeto temporário limpo para re-preencher
     const novosCargos = {
       Lider: [],
       Gerente: [],
@@ -343,8 +339,7 @@ async function sincronizarMembrosDaGuilda(guild) {
     };
 
     guild.members.cache.forEach(member => {
-      if (member.user.bot) return; // ignora bots
-      
+      if (member.user.bot) return;
       const cargosDetectados = detectarCargosDoCla(member);
       cargosDetectados.forEach(cargo => {
         if (novosCargos[cargo]) {
@@ -353,133 +348,64 @@ async function sincronizarMembrosDaGuilda(guild) {
       });
     });
 
-    // Atualiza a nossa base de dados com as informações reais do Discord
     database.cargos = novosCargos;
     salvarBanco();
     
-    console.log("✅ Sincronização automática concluída com sucesso!");
+    console.log("✅ Sincronização automática concluída!");
     await atualizarQuadro(guild);
   } catch (err) {
-    console.error("❌ Erro ao sincronizar membros da guilda:", err);
+    console.error("❌ Erro ao sincronizar membros:", err);
   }
 }
 
 /* ==========================================================
-   📜 REGISTRO DE COMANDOS DE BARRA (/COMANDOS)
+   🔄 EVENTO: QUANDO TIRAR O CARGO (MUDANÇA DE CARGO)
  ========================================================== */
-const commands = [
-  new SlashCommandBuilder()
-    .setName("quadro")
-    .setDescription("Ver o quadro de cargos oficial do Clã Hunters"),
-
-  new SlashCommandBuilder()
-    .setName("sincronizar")
-    .setDescription("Varre o servidor do Discord e puxa todos os cargos automaticamente para a hierarquia"),
-
-  new SlashCommandBuilder()
-    .setName("addcargo")
-    .setDescription("Adiciona um sobrevivente a um cargo do clã manualmente")
-    .addStringOption(opt =>
-      opt.setName("cargo")
-        .setDescription("Cargo desejado")
-        .setRequired(true)
-        .addChoices(
-          { name: "👑 Lider", value: "Lider" },
-          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
-          { name: "💀 Elite", value: "Elite" },
-          { name: "🔫 Membros", value: "membros" },
-          { name: "🔰 Recruta", value: "Recruta" }
-        )
-    )
-    .addUserOption(opt =>
-      opt.setName("sobrevivente")
-        .setDescription("Usuário do Discord")
-        .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("removercargo")
-    .setDescription("Remove um sobrevivente de um cargo manualmente")
-    .addStringOption(opt =>
-      opt.setName("cargo")
-        .setDescription("Cargo a remover")
-        .setRequired(true)
-        .addChoices(
-          { name: "👑 Lider", value: "Lider" },
-          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
-          { name: "💀 Elite", value: "Elite" },
-          { name: "🔫 Membros", value: "membros" },
-          { name: "🔰 Recruta", value: "Recruta" }
-        )
-    )
-    .addUserOption(opt =>
-      opt.setName("sobrevivente")
-        .setDescription("Usuário do Discord")
-        .setRequired(true)
-    )
-].map(cmd => cmd.toJSON());
-
-async function registrarComandos() {
-  if (!TOKEN || !CLIENT_ID || !GUILD_ID) {
-    console.log("⚠️ Credenciais incompletas no painel de controle. Pulando registro de comandos.");
-    return;
-  }
-  
-  const rest = new REST({ version: "10" }).setToken(TOKEN);
-  try {
-    console.log("⚙️ Registrando comandos do Clã Hunters...");
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commands }
-    );
-    console.log("✅ Comandos de barra registrados com sucesso!");
-  } catch (error) {
-    console.error("❌ Falha ao registrar comandos:", error);
-  }
-}
-
-/* ==========================================================
-   🎮 EVENTOS & INTERAÇÕES
- ========================================================== */
-
-// 1. EVENTO DE MUDANÇA DE CARGO DO USUÁRIO (AUTOMATIZADO!)
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   try {
-    // Verifica se os cargos de fato mudaram para evitar loops
     const oldRoles = oldMember.roles.cache;
     const newRoles = newMember.roles.cache;
     if (oldRoles.size === newRoles.size && oldRoles.every(r => newRoles.has(r.id))) {
       return;
     }
 
-    console.log(`🔄 Alteração de cargos detectada para o sobrevivente: ${newMember.user.tag}`);
+    console.log(`🔄 Alteração de cargos para: ${newMember.user.tag}`);
 
     const userId = newMember.id;
     const novosCargosDetectados = detectarCargosDoCla(newMember);
 
+    let perdeuCargosDoCla = false;
     let alterouAlgo = false;
 
-    // Primeiro, removemos o usuário de todas as listas para recalcular com base no novo estado
+    // Remove das listas anteriores
     Object.keys(database.cargos).forEach(cargoKey => {
       const listaOriginal = database.cargos[cargoKey] || [];
       if (listaOriginal.includes(userId)) {
         database.cargos[cargoKey] = listaOriginal.filter(id => id !== userId);
         alterouAlgo = true;
-        console.log(`🗑️ Removido temporariamente do cargo anterior [${cargoKey}] devido a troca de cargo.`);
+        console.log(`🗑️ Removido do cargo [${cargoKey}]`);
       }
     });
 
-    // Agora adicionamos o usuário nos cargos detectados atuais (pode ser mais de um para cargos altos!)
+    // Se o usuário perdeu todos os cargos do clã
+    if (novosCargosDetectados.length === 0) {
+      perdeuCargosDoCla = true;
+    }
+
+    // Adiciona aos novos cargos detectados
     novosCargosDetectados.forEach(cargo => {
-      if (!database.cargos[cargo]) {
-        database.cargos[cargo] = [];
-      }
+      if (!database.cargos[cargo]) database.cargos[cargo] = [];
       database.cargos[cargo].push(userId);
       alterouAlgo = true;
-      console.log(`📥 Adicionado automaticamente ao cargo [${cargo}]!`);
+      console.log(`📥 Adicionado ao cargo [${cargo}]`);
     });
 
-    // Se houve alguma alteração real na hierarquia do banco de dados, salva e atualiza o quadro!
+    // ⚡ QUANDO TIRAR O CARGO: REMOVE A TAG E O ID DO DISCORD NICKNAME!
+    if (perdeuCargosDoCla) {
+      console.log(`✂️ Cargo removido! Retirando TAG e ID do apelido no Discord de ${newMember.user.tag}...`);
+      await retirarTagEIdDoMembro(newMember);
+    }
+
     if (alterouAlgo) {
       salvarBanco();
       await atualizarQuadro(newMember.guild);
@@ -489,7 +415,60 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
   }
 });
 
-// 2. INTERAÇÃO DE COMANDOS DE BARRA
+/* ==========================================================
+   📜 REGISTRO E INTERAÇÃO DOS COMANDOS /
+ ========================================================== */
+const commands = [
+  new SlashCommandBuilder()
+    .setName("quadro")
+    .setDescription("Ver o quadro de cargos oficial do Clã Hunters"),
+
+  new SlashCommandBuilder()
+    .setName("sincronizar")
+    .setDescription("Sincroniza automaticamente todos os membros e o quadro"),
+
+  new SlashCommandBuilder()
+    .setName("addcargo")
+    .setDescription("Adiciona um sobrevivente a um cargo manualmente")
+    .addStringOption(opt =>
+      opt.setName("cargo").setDescription("Cargo").setRequired(true)
+        .addChoices(
+          { name: "👑 Lider", value: "Lider" },
+          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
+          { name: "💀 Elite", value: "Elite" },
+          { name: "🔫 Membros", value: "membros" },
+          { name: "🔰 Recruta", value: "Recruta" }
+        )
+    )
+    .addUserOption(opt => opt.setName("sobrevivente").setDescription("Usuário").setRequired(true)),
+
+  new SlashCommandBuilder()
+    .setName("removercargo")
+    .setDescription("Remove o cargo e RETIRA A TAG E ID do apelido no Discord")
+    .addStringOption(opt =>
+      opt.setName("cargo").setDescription("Cargo a remover").setRequired(true)
+        .addChoices(
+          { name: "👑 Lider", value: "Lider" },
+          { name: "⚡ Gerentes FiveZ", value: "Gerente" },
+          { name: "💀 Elite", value: "Elite" },
+          { name: "🔫 Membros", value: "membros" },
+          { name: "🔰 Recruta", value: "Recruta" }
+        )
+    )
+    .addUserOption(opt => opt.setName("sobrevivente").setDescription("Usuário").setRequired(true))
+].map(cmd => cmd.toJSON());
+
+async function registrarComandos() {
+  if (!TOKEN || !CLIENT_ID || !GUILD_ID) return;
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+  try {
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log("✅ Comandos de barra registrados com sucesso!");
+  } catch (error) {
+    console.error("❌ Falha ao registrar comandos:", error);
+  }
+}
+
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -498,139 +477,93 @@ client.on("interactionCreate", async interaction => {
   const user = options.getUser("sobrevivente");
 
   try {
-    // Permissão de acesso: Gerentes, Líderes ou Administradores
-    const isLiderDb = database.cargos.Lider && database.cargos.Lider.includes(executingUser.id);
-    const isGerenteDb = database.cargos.Gerente && database.cargos.Gerente.includes(executingUser.id);
-    
+    const isLiderDb = database.cargos.Lider?.includes(executingUser.id);
+    const isGerenteDb = database.cargos.Gerente?.includes(executingUser.id);
     const member = interaction.member;
-    const possessesAuthorizedRole = member ? member.roles.cache.some(role => {
-      const name = role.name.toLowerCase();
-      return name.includes("gerente") || 
-             name.includes("lider") || 
-             name.includes("líder") || 
-             role.id === "1515125822795546715" || 
-             role.id === "1523277774436171796";
-    }) || member.permissions.has("Administrator") : false;
+    
+    const authorized = isLiderDb || isGerenteDb || (member && member.permissions?.has("Administrator"));
 
-    const authorized = isLiderDb || isGerenteDb || possessesAuthorizedRole;
-
-    if (!authorized) {
+    if (!authorized && commandName !== "quadro") {
       return interaction.reply({
-        content: "❌ **Acesso Negado!** Sobrevivente, apenas a **Gerência** ou cargos autorizados do Clã Hunters possuem autoridade para usar este comando.",
+        content: "❌ **Acesso Negado!** Apenas a **Gerência** pode usar este comando.",
         ephemeral: true
       });
     }
 
-    // Comando de Visualizar Quadro
     if (commandName === "quadro") {
       return interaction.reply({ embeds: [criarEmbed(guild)] });
     }
 
-    // Comando de Sincronização Geral
     if (commandName === "sincronizar") {
-      await interaction.reply({ content: "🔄 **Sincronizando todos os membros com cargos ativos...**", ephemeral: true });
-      if (guild) {
-        await sincronizarMembrosDaGuilda(guild);
-        await interaction.followUp({ content: "✅ **Sincronização concluída!** O quadro de cargos oficial foi atualizado.", ephemeral: true });
-      } else {
-        await interaction.followUp({ content: "❌ Não foi possível obter o servidor.", ephemeral: true });
-      }
-      return;
+      await interaction.reply({ content: "🔄 **Sincronizando cargos e apelidos...**", ephemeral: true });
+      if (guild) await sincronizarMembrosDaGuilda(guild);
+      return interaction.followUp({ content: "✅ **Sincronização concluída!**", ephemeral: true });
     }
 
-    // Comando Manual de Adicionar Cargo
     if (commandName === "addcargo") {
       if (!cargo || !user) return;
-
-      // Remove de todos os cargos primeiro para não duplicar
       Object.keys(database.cargos).forEach(k => {
         database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
       });
-
-      // Adiciona ao cargo novo
-      if (!database.cargos[cargo]) {
-        database.cargos[cargo] = [];
-      }
+      if (!database.cargos[cargo]) database.cargos[cargo] = [];
       database.cargos[cargo].push(user.id);
       salvarBanco();
 
-      await interaction.reply({
-        content: `✅ ${user} foi promovido para o cargo **${NOMES_CARGOS[cargo]}** com sucesso!`,
-        ephemeral: false
-      });
-
-      if (guild) {
-        await atualizarQuadro(guild);
+      // Opcional: Adicionar cargo no Discord se ID configurado
+      if (ROLE_IDS[cargo] && guild) {
+        try {
+          const targetMember = await guild.members.fetch(user.id);
+          if (targetMember) await targetMember.roles.add(ROLE_IDS[cargo]);
+        } catch (e) {}
       }
+
+      await interaction.reply({ content: `✅ ${user} foi promovido a **${NOMES_CARGOS[cargo]}**!` });
+      if (guild) await atualizarQuadro(guild);
     }
 
-    // Comando Manual de Remover Cargo
     if (commandName === "removercargo") {
-      if (!cargo || !user || !database.cargos[cargo]) return;
-
-      const antes = database.cargos[cargo].length;
-      database.cargos[cargo] = database.cargos[cargo].filter(id => id !== user.id);
-      const depois = database.cargos[cargo].length;
-
-      if (antes === depois) {
-        return interaction.reply({
-          content: `⚠️ O usuário ${user} não estava no cargo **${NOMES_CARGOS[cargo]}**.`,
-          ephemeral: true
-        });
-      }
-
+      if (!cargo || !user) return;
+      
+      database.cargos[cargo] = (database.cargos[cargo] || []).filter(id => id !== user.id);
       salvarBanco();
 
+      let tagRemovidaMsg = "";
+      if (guild) {
+        try {
+          const targetMember = await guild.members.fetch(user.id);
+          if (targetMember) {
+            // Remove cargo no Discord se ID configurado
+            if (ROLE_IDS[cargo]) {
+              await targetMember.roles.remove(ROLE_IDS[cargo]).catch(() => {});
+            }
+            // ✂️ RETIRA A TAG E O ID DO DISCORD NICKNAME!
+            const limpo = await retirarTagEIdDoMembro(targetMember);
+            if (limpo) tagRemovidaMsg = "\n✂️ **TAG e ID do FiveM foram removidos do apelido no Discord!**";
+          }
+        } catch (e) {}
+      }
+
       await interaction.reply({
-        content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!`,
-        ephemeral: false
+        content: `❌ ${user} foi removido do cargo **${NOMES_CARGOS[cargo]}**!${tagRemovidaMsg}`
       });
 
-      if (guild) {
-        await atualizarQuadro(guild);
-      }
+      if (guild) await atualizarQuadro(guild);
     }
   } catch (err) {
     console.error("❌ Erro ao processar comando:", err);
-    try {
-      if (!interaction.replied) {
-        await interaction.reply({ content: "❌ Ocorreu um erro ao processar o comando.", ephemeral: true });
-      }
-    } catch (e) {}
   }
 });
 
-/* ==========================================================
-   🚀 BOT PRONTO
- ========================================================== */
 client.once("ready", async () => {
-  console.log(`🔥 Bot conectado com sucesso como: ${client.user.tag}`);
-  
-  if (client.user) {
-    client.user.setActivity("Hunters Zumbi Fivez", { type: ActivityType.Playing });
-  }
-  
-  // Registrar comandos de barra (/addcargo, /removercargo, /sincronizar, /quadro)
+  console.log(`🔥 Bot conectado como: ${client.user.tag}`);
+  client.user?.setActivity("Hunters Zumbi Fivez", { type: ActivityType.Playing });
   await registrarComandos();
-  
   if (GUILD_ID) {
-    try {
-      const guild = await client.guilds.fetch(GUILD_ID);
-      if (guild) {
-        // Realiza uma sincronização inicial de todos os membros ao ligar o bot!
-        await sincronizarMembrosDaGuilda(guild);
-      }
-    } catch (err) {
-      console.log("⚠️ Não foi possível sincronizar o quadro automaticamente no canal de início. Verifique o GUILD_ID.");
-    }
+    const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
+    if (guild) await sincronizarMembrosDaGuilda(guild);
   }
 });
 
-// Realizar Login
 if (TOKEN) {
-  client.login(TOKEN).catch(err => {
-    console.error("❌ Falha no login do Bot do Discord:", err);
-  });
-} else {
-  console.log("⚠️ TOKEN não configurado. Por favor configure a variável TOKEN nas configurações da hospedagem.");
+  client.login(TOKEN).catch(err => console.error("❌ Falha no login do Bot:", err));
 }
