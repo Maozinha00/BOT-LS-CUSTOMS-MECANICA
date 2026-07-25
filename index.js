@@ -2,10 +2,11 @@
  * ⚔️ CLÃ HUNTERS - DISCORD BOT OFFICIAL SCRIPT (UPGRADED) ⚔️
  * Criado para servidores FiveM Zumbi Apocalypse (Hunters Zumbi Fivez).
  * 
- * ✨ RECURSOS AUTO-SYNC:
- * 1. Quando um membro PERDE O CARGO ou SAI DO SERVIDOR, o bot o remove
+ * ✨ RECURSOS AUTO-SYNC & PAINEL WEB:
+ * 1. PAINEL WEB COMPLETO: Acesse pelo navegador na porta do bot (ex: http://seu-ip:8080 ou 3000)!
+ * 2. Quando um membro PERDE O CARGO ou SAI DO SERVIDOR, o bot o remove
  *    IMEDIATAMENTE da hierarquia e atualiza o quadro no Discord.
- * 2. Quando o cargo é removido, o bot retira AUTOMATICAMENTE a TAG do clã
+ * 3. Quando o cargo é removido, o bot retira AUTOMATICAMENTE a TAG do clã
  *    e o ID do FiveM do apelido no Discord!
  * 
  * Requisitos: Ative "SERVER MEMBERS INTENT" no Discord Developer Portal!
@@ -31,17 +32,16 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /* ==========================================================
-   🌐 MANTER ONLINE (WEB SERVER KEEP-ALIVE)
+   🌐 MANTER ONLINE & PAINEL WEB DASHBOARD (PORT 3000 / 8080)
  ========================================================== */
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.get("/ping", (_, res) => {
   res.send("🔥 Bot Clã Hunters está 100% Ativo e Online! ⚔️");
-});
-
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 Servidor Web Keep-Alive ativo na porta ${PORT}.`);
 });
 
 /* ==========================================================
@@ -195,7 +195,6 @@ function gerarTexto(guild) {
 
     for (const id of lista) {
       if (guild) {
-        // Se a guilda estiver disponível, verifica se o membro ainda está no servidor
         const member = guild.members.cache.get(id);
         if (member) {
           const nomeOriginal = member.displayName || member.user.username;
@@ -370,7 +369,6 @@ async function sincronizarMembrosDaGuilda(guild) {
       lista.forEach(id => novosMembrosComCargo.add(id));
     });
 
-    // Se um membro tinha cargo antes mas agora não tem mais, retira TAG & ID do apelido
     for (const oldId of antigosMembrosComCargo) {
       if (!novosMembrosComCargo.has(oldId)) {
         const member = guild.members.cache.get(oldId);
@@ -401,7 +399,6 @@ client.on("guildMemberRemove", async (member) => {
 
     let alterouAlgo = false;
 
-    // Remove das listas de hierarquia do banco de dados
     Object.keys(database.cargos).forEach(cargoKey => {
       const listaOriginal = database.cargos[cargoKey] || [];
       if (listaOriginal.includes(userId)) {
@@ -440,7 +437,6 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
     let perdeuCargosDoCla = false;
     let alterouAlgo = false;
 
-    // Remove das listas anteriores
     Object.keys(database.cargos).forEach(cargoKey => {
       const listaOriginal = database.cargos[cargoKey] || [];
       if (listaOriginal.includes(userId)) {
@@ -583,7 +579,6 @@ client.on("interactionCreate", async interaction => {
     if (commandName === "removercargo") {
       if (!cargo || !user) return;
       
-      // Remove de todas as listas no banco
       Object.keys(database.cargos).forEach(k => {
         database.cargos[k] = (database.cargos[k] || []).filter(id => id !== user.id);
       });
@@ -614,15 +609,321 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-client.once("ready", async () => {
-  console.log(`🔥 Bot conectado como: ${client.user.tag}`);
+/* ==========================================================
+   🌐 ENDPOINTS DA API DO PAINEL WEB
+ ========================================================== */
+
+app.get("/api/status", async (req, res) => {
+  const guild = GUILD_ID ? await client.guilds.fetch(GUILD_ID).catch(() => null) : null;
+  const texto = gerarTexto(guild);
+  res.json({
+    online: client.isReady(),
+    botUser: client.user ? client.user.tag : "Conectando...",
+    database,
+    texto,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.post("/api/addcargo", async (req, res) => {
+  const { cargo, userId } = req.body;
+  if (!cargo || !userId) return res.status(400).json({ error: "Cargo e ID são obrigatórios" });
+
+  Object.keys(database.cargos).forEach(k => {
+    database.cargos[k] = (database.cargos[k] || []).filter(id => id !== userId);
+  });
+  if (!database.cargos[cargo]) database.cargos[cargo] = [];
+  database.cargos[cargo].push(userId);
+  salvarBanco();
+
+  const guild = GUILD_ID ? await client.guilds.fetch(GUILD_ID).catch(() => null) : null;
+  if (guild && ROLE_IDS[cargo]) {
+    try {
+      const member = await guild.members.fetch(userId);
+      if (member) await member.roles.add(ROLE_IDS[cargo]);
+    } catch (e) {}
+  }
+  if (guild) await atualizarQuadro(guild);
+
+  res.json({ success: true, message: `Membro ID ${userId} promovido para ${cargo} com sucesso!` });
+});
+
+app.post("/api/removercargo", async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "ID do usuário é obrigatório" });
+
+  Object.keys(database.cargos).forEach(k => {
+    database.cargos[k] = (database.cargos[k] || []).filter(id => id !== userId);
+  });
+  salvarBanco();
+
+  const guild = GUILD_ID ? await client.guilds.fetch(GUILD_ID).catch(() => null) : null;
+  let limpo = false;
+  if (guild) {
+    try {
+      const member = await guild.members.fetch(userId);
+      if (member) {
+        limpo = await retirarTagEIdDoMembro(member);
+      }
+    } catch (e) {}
+    await atualizarQuadro(guild);
+  }
+
+  res.json({
+    success: true,
+    limpo,
+    message: `Membro ID ${userId} removido da hierarquia! ${limpo ? "✂️ Tag & ID removidos do apelido!" : ""}`
+  });
+});
+
+app.post("/api/sincronizar", async (req, res) => {
+  const guild = GUILD_ID ? await client.guilds.fetch(GUILD_ID).catch(() => null) : null;
+  if (guild) {
+    await sincronizarMembrosDaGuilda(guild);
+  }
+  res.json({ success: true, message: "Sincronização de cargos executada!" });
+});
+
+app.post("/api/limpar-inativos", async (req, res) => {
+  const guild = GUILD_ID ? await client.guilds.fetch(GUILD_ID).catch(() => null) : null;
+  if (guild) {
+    await sincronizarMembrosDaGuilda(guild);
+  }
+  res.json({ success: true, message: "Limpeza de inativos executada!" });
+});
+
+/* ==========================================================
+   🖥️ PAINEL WEB COMPLETO (HTML DASHBOARD INTERATIVO)
+ ========================================================== */
+app.get("/", (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel Clã Hunters - Bot Discord</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 md:p-8">
+  <div class="max-w-6xl mx-auto space-y-6">
+    
+    <!-- Top Header Bar -->
+    <header class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-950 border border-emerald-500/50 flex items-center justify-center text-3xl shadow-lg">
+          ☣️
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">PAINEL DE CONTROLE OFICIAL</span>
+          </div>
+          <h1 class="text-2xl md:text-3xl font-extrabold font-mono tracking-tight text-white">Clã Hunters • Bot Dashboard</h1>
+          <p class="text-xs text-slate-400 mt-0.5">Sincronizador Automático de Cargos & Limpador de Tag/ID FiveM</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center gap-3">
+        <button onclick="carregarStatus()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg transition-all flex items-center gap-2 cursor-pointer active:scale-95">
+          <span>🔄 Atualizar Painel</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Left Column: Discord Quadro Live Embed Preview -->
+      <div class="lg:col-span-2 space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+            <h2 class="font-bold text-slate-200 font-mono text-sm uppercase tracking-wider flex items-center gap-2">
+              <span class="text-emerald-400">📜</span> Quadro de Hierarquia no Discord
+            </h2>
+            <div class="flex items-center gap-2">
+              <button onclick="sincronizarBot()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 transition-all cursor-pointer">
+                ⚡ Sync Discord
+              </button>
+              <button onclick="limparInativos()" class="px-3 py-1.5 rounded-lg bg-red-950 hover:bg-red-900 text-red-300 font-bold text-xs border border-red-800/60 transition-all cursor-pointer">
+                🧹 Limpar Inativos
+              </button>
+            </div>
+          </div>
+
+          <!-- Embed Preview Card -->
+          <div class="bg-[#1e1f22] border-l-4 border-emerald-500 rounded-r-xl p-5 font-mono text-xs text-slate-200 space-y-3 shadow-inner">
+            <div id="embed-text" class="whitespace-pre-wrap leading-relaxed text-emerald-300">
+              Carregando quadro de cargos...
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Quick Actions & Add/Remove Forms -->
+      <div class="space-y-6">
+        
+        <!-- Member Add/Promote Form -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="font-bold text-slate-200 font-mono text-sm uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+            <span>➕ Gerenciar Cargo / Membro</span>
+          </h3>
+
+          <form id="form-add" onsubmit="adicionarMembro(event)" class="space-y-3 text-xs">
+            <div>
+              <label class="block text-slate-400 font-medium mb-1">Selecione o Cargo</label>
+              <select id="select-cargo" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-emerald-500 outline-none">
+                <option value="Lider">👑 Líder</option>
+                <option value="Gerente">⚡ Gerente</option>
+                <option value="Elite">💀 Elite</option>
+                <option value="membros" selected>🔫 Membro</option>
+                <option value="Recruta">🔰 Recruta</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-slate-400 font-medium mb-1">ID do Usuário no Discord</label>
+              <input id="input-userid" type="text" placeholder="Ex: 123456789012345678" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-emerald-500 outline-none" />
+            </div>
+
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-all cursor-pointer shadow-md">
+              Promover / Adicionar
+            </button>
+          </form>
+        </div>
+
+        <!-- Remove Member Form -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <h3 class="font-bold text-slate-200 font-mono text-sm uppercase tracking-wider text-red-400 flex items-center gap-2">
+            <span>❌ Remover Membro & Retirar Tag/ID</span>
+          </h3>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            Ao remover o cargo, o bot retira automaticamente a Tag do Clã e o ID do FiveM no apelido do Discord!
+          </p>
+
+          <form id="form-remove" onsubmit="removerMembro(event)" class="space-y-3 text-xs">
+            <div>
+              <label class="block text-slate-400 font-medium mb-1">ID do Usuário a Remover</label>
+              <input id="input-remove-userid" type="text" placeholder="Ex: 123456789012345678" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-100 font-mono focus:border-red-500 outline-none" />
+            </div>
+
+            <button type="submit" class="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all cursor-pointer shadow-md">
+              Remover Cargo & Limpar Apelido
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function carregarStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (data.texto) {
+          document.getElementById('embed-text').innerText = data.texto;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function sincronizarBot() {
+      try {
+        const res = await fetch('/api/sincronizar', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message || 'Sincronização iniciada!');
+        carregarStatus();
+      } catch (err) {
+        alert('Erro ao sincronizar bot');
+      }
+    }
+
+    async function limparInativos() {
+      try {
+        const res = await fetch('/api/limpar-inativos', { method: 'POST' });
+        const data = await res.json();
+        alert(data.message || 'Limpeza realizada!');
+        carregarStatus();
+      } catch (err) {
+        alert('Erro ao limpar inativos');
+      }
+    }
+
+    async function adicionarMembro(e) {
+      e.preventDefault();
+      const cargo = document.getElementById('select-cargo').value;
+      const userId = document.getElementById('input-userid').value.trim();
+      if (!userId) return;
+
+      try {
+        const res = await fetch('/api/addcargo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cargo, userId })
+        });
+        const data = await res.json();
+        alert(data.message || 'Membro adicionado!');
+        document.getElementById('input-userid').value = '';
+        carregarStatus();
+      } catch (err) {
+        alert('Erro ao adicionar membro');
+      }
+    }
+
+    async function removerMembro(e) {
+      e.preventDefault();
+      const userId = document.getElementById('input-remove-userid').value.trim();
+      if (!userId) return;
+
+      try {
+        const res = await fetch('/api/removercargo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId })
+        });
+        const data = await res.json();
+        alert(data.message || 'Membro removido e apelido limpo!');
+        document.getElementById('input-remove-userid').value = '';
+        carregarStatus();
+      } catch (err) {
+        alert('Erro ao remover membro');
+      }
+    }
+
+    window.onload = carregarStatus;
+  </script>
+</body>
+</html>`);
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🌐 Servidor Web & Painel Dashboard ativos na porta ${PORT}.`);
+});
+
+/* ==========================================================
+   🚀 BOT INITIALIZATION & EVENTS
+ ========================================================== */
+
+const handleReady = async () => {
+  console.log(`🔥 Bot conectado como: ${client.user?.tag || "Bot Hierarquia"}`);
   client.user?.setActivity("Hunters Zumbi Fivez", { type: ActivityType.Playing });
   await registrarComandos();
   if (GUILD_ID) {
     const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
     if (guild) await sincronizarMembrosDaGuilda(guild);
   }
-});
+};
+
+// Suporta tanto o evento v14 'ready' quanto a nova especificação v15 'clientReady' para evitar avisos de depreciação
+client.once("clientReady", handleReady);
+client.once("ready", handleReady);
 
 if (TOKEN) {
   client.login(TOKEN).catch(err => console.error("❌ Falha no login do Bot:", err));
