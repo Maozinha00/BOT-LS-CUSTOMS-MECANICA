@@ -1286,15 +1286,15 @@ Carregando estrutura de hierarquia do clã...
 
         const c = data.database?.cargos || {};
         document.getElementById('stat-membros-breakdown').innerText = 
-          `L: ${c.Lider?.length || 0} | G: ${c.Gerente?.length || 0} | E: ${c.Elite?.length || 0} | M: ${c.membros?.length || 0} | R: ${c.Recruta?.length || 0}`;
+          \`L: \${c.Lider?.length || 0} | G: \${c.Gerente?.length || 0} | E: \${c.Elite?.length || 0} | M: \${c.membros?.length || 0} | R: \${c.Recruta?.length || 0}\`;
 
         const caixa = data.database?.financeiro?.caixa || 0;
         document.getElementById('stat-caixa-total').innerText = 'R$ ' + caixa.toLocaleString('pt-BR');
         document.getElementById('stat-entradas-hoje').innerText = 'Entradas Hoje: R$ ' + (data.database?.financeiro?.entradasHoje || 0).toLocaleString('pt-BR');
 
-        document.getElementById('stat-ram-cpu').innerText = `RAM: ${data.ramUsageMB} MB`;
+        document.getElementById('stat-ram-cpu').innerText = \`RAM: \${data.ramUsageMB || 0} MB\`;
         const uptimeM = Math.floor((data.uptimeSeconds || 0) / 60);
-        document.getElementById('stat-uptime').innerText = `Uptime: ${uptimeM} min`;
+        document.getElementById('stat-uptime').innerText = \`Uptime: \${uptimeM} min\`;
 
         // Hierarquia Embed Text
         if (data.textoHierarquia) {
@@ -1320,18 +1320,18 @@ Carregando estrutura de hierarquia do clã...
 
     function renderEstoqueGrid(estoque) {
       const container = document.getElementById('grid-estoque');
-      container.innerHTML = Object.entries(estoque).map(([item, qtd]) => `
+      container.innerHTML = Object.entries(estoque).map(([item, qtd]) => \`
         <div class="bg-[#070a11] border border-slate-800 rounded-xl p-4 flex items-center justify-between font-mono text-xs">
           <div>
-            <div class="font-bold text-slate-200 text-sm">${item}</div>
-            <div class="text-slate-400 mt-1">Estoque: <span class="text-emerald-400 font-bold">${qtd}</span> un</div>
+            <div class="font-bold text-slate-200 text-sm">\${item}</div>
+            <div class="text-slate-400 mt-1">Estoque: <span class="text-emerald-400 font-bold">\${qtd}</span> un</div>
           </div>
           <div class="flex items-center gap-1">
-            <button onclick="alterarEstoque('${item}', 1, 'add')" class="w-7 h-7 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-lg font-bold hover:bg-emerald-900 cursor-pointer">+</button>
-            <button onclick="alterarEstoque('${item}', 1, 'remove')" class="w-7 h-7 bg-red-950 text-red-400 border border-red-800 rounded-lg font-bold hover:bg-red-900 cursor-pointer">-</button>
+            <button onclick="alterarEstoque('\${item}', 1, 'add')" class="w-7 h-7 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-lg font-bold hover:bg-emerald-900 cursor-pointer">+</button>
+            <button onclick="alterarEstoque('\${item}', 1, 'remove')" class="w-7 h-7 bg-red-950 text-red-400 border border-red-800 rounded-lg font-bold hover:bg-red-900 cursor-pointer">-</button>
           </div>
         </div>
-      `).join('');
+      \`).join('');
     }
 
     async function alterarEstoque(item, quantidade, acao) {
@@ -1353,15 +1353,15 @@ Carregando estrutura de hierarquia do clã...
         body.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500">Nenhuma venda registrada ainda.</td></tr>';
         return;
       }
-      body.innerHTML = vendas.slice(0, 10).map(v => `
+      body.innerHTML = vendas.slice(0, 10).map(v => \`
         <tr class="text-slate-300">
-          <td class="py-2 text-slate-500">${v.data}</td>
-          <td class="py-2 font-bold text-white">${v.cliente}</td>
-          <td class="py-2 text-emerald-400">${v.qtd}x ${v.produto}</td>
-          <td class="py-2">${v.qtd}</td>
-          <td class="py-2 text-emerald-400 font-bold">R$ ${(v.valorTotal || 0).toLocaleString('pt-BR')}</td>
+          <td class="py-2 text-slate-500">\${v.data}</td>
+          <td class="py-2 font-bold text-white">\${v.cliente}</td>
+          <td class="py-2 text-emerald-400">\${v.qtd}x \${v.produto}</td>
+          <td class="py-2">\${v.qtd}</td>
+          <td class="py-2 text-emerald-400 font-bold">R$ \${(v.valorTotal || 0).toLocaleString('pt-BR')}</td>
         </tr>
-      `).join('');
+      \`).join('');
     }
 
     function renderLogsList(logs) {
@@ -1370,13 +1370,13 @@ Carregando estrutura de hierarquia do clã...
         container.innerHTML = '<div class="text-slate-500">Sem logs gravados.</div>';
         return;
       }
-      container.innerHTML = logs.slice(0, 30).map(l => `
+      container.innerHTML = logs.slice(0, 30).map(l => \`
         <div class="flex items-center gap-2 border-b border-slate-900 pb-1">
-          <span class="text-slate-500">[${l.timestamp}]</span>
-          <span class="text-emerald-400 font-bold">[${l.autor || 'Sistema'}]:</span>
-          <span class="text-slate-300">${l.mensagem}</span>
+          <span class="text-slate-500">[\${l.timestamp}]</span>
+          <span class="text-emerald-400 font-bold">[\${l.autor || 'Sistema'}]:</span>
+          <span class="text-slate-300">\${l.mensagem}</span>
         </div>
-      `).join('');
+      \`).join('');
     }
 
     function updateCharts(cargos, estoque) {
