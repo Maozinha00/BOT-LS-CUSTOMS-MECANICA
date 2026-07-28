@@ -36,7 +36,8 @@ let database = {
     token: process.env.TOKEN || "",
     clientId: process.env.CLIENT_ID || "",
     guildId: process.env.GUILD_ID || "",
-    channelId: process.env.CHANNEL_ID || "1527817862532694026"
+    channelId: process.env.CHANNEL_ID || "1527817862532694026",
+    bannerUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop"
   },
   cargos: {
     Lider: [],
@@ -75,7 +76,8 @@ function carregarBanco() {
           token: process.env.TOKEN || "",
           clientId: process.env.CLIENT_ID || "",
           guildId: process.env.GUILD_ID || "",
-          channelId: process.env.CHANNEL_ID || "1527817862532694026"
+          channelId: process.env.CHANNEL_ID || "1527817862532694026",
+          bannerUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop"
         };
       }
     } catch (err) {
@@ -99,26 +101,6 @@ function adicionarLog(tipo, descricao) {
   salvarBanco();
 }
 
-/* DISCORD CLIENT */
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-async function getGuild() {
-  const guildId = database.config.guildId || process.env.GUILD_ID;
-  if (guildId) {
-    const fetched = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
-    if (fetched) return fetched;
-  }
-  return client.guilds.cache.first() || null;
-}
-
 function limparNomeEId(nome) {
   if (!nome) return "";
   let temp = nome;
@@ -128,15 +110,43 @@ function limparNomeEId(nome) {
     /👑|⚡|💀|🔫|🔰/gi
   ];
   for (const r of regexes) temp = temp.replace(r, "");
+  // Limpa números de ID soltos no final
   temp = temp.replace(/[\s|_|\-·•\/\\|]*\d{1,8}\s*$/gi, "").trim();
   return temp || nome;
+}
+
+function extrairIdFiveM(displayName, currentId) {
+  if (currentId && currentId !== "00" && currentId !== "0" && currentId.trim() !== "") {
+    return currentId.trim();
+  }
+  if (!displayName) return "";
+  // Procura números no final do nickname do Discord ou após separadores (| - [ ])
+  const match = displayName.match(/(?:[\s|_|\-·•\/\\|#()\[\]]+|^)(\d{1,8})\s*(?:\)|\])?$/);
+  if (match && match[1] && match[1] !== "00" && match[1] !== "0") {
+    return match[1].trim();
+  }
+  return "";
+}
+
+function formatarLinhaMembro(tag, nome, idFiveM) {
+  const nomeLimpo = limparNomeEId(nome);
+  const idValido = idFiveM && idFiveM !== "00" && idFiveM !== "0" && idFiveM.trim() !== "" ? idFiveM.trim() : "";
+  if (idValido) {
+    return `└ ${tag} ${nomeLimpo} | ${idValido}`;
+  }
+  return `└ ${tag} ${nomeLimpo}`;
 }
 
 async function aplicarNicknameOficial(member, tagFormatted, nome, idFiveM) {
   try {
     if (!member || !member.manageable) return false;
     const nomeLimpo = limparNomeEId(nome);
-    const nickOficial = `${tagFormatted} ${nomeLimpo} | ${idFiveM}`;
+    const idValido = idFiveM && idFiveM !== "00" && idFiveM !== "0" && idFiveM.trim() !== "" ? idFiveM.trim() : "";
+    
+    const nickOficial = idValido
+      ? `${tagFormatted} ${nomeLimpo} | ${idValido}`
+      : `${tagFormatted} ${nomeLimpo}`;
+
     if (member.displayName !== nickOficial) {
       await member.setNickname(nickOficial);
       return true;
@@ -147,7 +157,6 @@ async function aplicarNicknameOficial(member, tagFormatted, nome, idFiveM) {
   return false;
 }
 
-// Remove o apelido oficial (retira tag e ID) e restaura o nome original no Discord
 async function removerNicknameOficial(member, nomeOriginal) {
   try {
     if (!member || !member.manageable) return false;
@@ -178,18 +187,23 @@ function identificarCargoPorNomeDiscord(roleName) {
   return null;
 }
 
-function obterMaiorCargoDiscordMember(member) {
-  if (!member || !member.roles || !member.roles.cache) return null;
+function obterCargosDiscordMember(member) {
+  if (!member || !member.roles || !member.roles.cache) return { cargoPrincipal: null, temElite: false };
+  
+  let cargoPrincipal = null;
+  let temElite = false;
+
   for (const cargoKey of HIERARQUIA_ORDEM) {
     const temRole = member.roles.cache.some((r) => {
       const match = identificarCargoPorNomeDiscord(r.name || "");
+      if (match === "Elite") temElite = true;
       return match === cargoKey;
     });
-    if (temRole) {
-      return { cargoKey, tag: TAGS_CARGOS[cargoKey] };
+    if (temRole && !cargoPrincipal) {
+      cargoPrincipal = cargoKey;
     }
   }
-  return null;
+  return { cargoPrincipal, temElite };
 }
 
 async function gerarTextoHierarquia() {
@@ -204,53 +218,49 @@ async function gerarTextoHierarquia() {
       const memData = database.membros[id];
       if (!memData) continue;
       const tag = memData.tag || TAGS_CARGOS[cargoKey];
-      const idFiveM = memData.idFiveM || "00";
+      const idFiveM = memData.idFiveM || "";
       const nomeLimpo = limparNomeEId(memData.nome || "Membro");
-      nomes.push(`└ ${tag} ${nomeLimpo} | ${idFiveM}`);
+      nomes.push(formatarLinhaMembro(tag, nomeLimpo, idFiveM));
     }
     return nomes.length ? nomes.join("\n") : "└ *(Vazio)*";
   }
 
-  return `╔════════════════════════════════════╗
-      👑 HIERARQUIA OFICIAL 👑
-╚════════════════════════════════════╝
-
-━━━━━━━━ 👑 |Lider| LÍDER ━━━━━━━━
+  return `👑 **LÍDERES**
 ${listar("Lider")}
 
-━━━━━━━━ ⚡ |Gerente| GERENTE ━━━━━━
+⚡ **GERENTES**
 ${listar("Gerente")}
 
-━━━━━━━━ 💀 |Elite| ELITE ━━━━━━━━
+💀 **ELITES**
 ${listar("Elite")}
 
-━━━━━━━━ 🔫 |Membro| MEMBRO ━━━━━━
+🔫 **MEMBROS**
 ${listar("membros")}
 
-━━━━━━━━ 🔰 |Recruta| RECRUTA ━━━━━
+🔰 **RECRUTAS**
 ${listar("Recruta")}
 
-════════════════════════════
-⚔️ Sistema de Hierarquia ERP
-📅 ${dataFormatada} • ${horaFormatada}
-════════════════════════════`;
+📅 *Atualizado automaticamente em ${dataFormatada} às ${horaFormatada}*`;
 }
 
 async function atualizarQuadro(guild) {
   try {
+    const { channelId } = database.config;
+    if (!channelId) return { success: false, message: "ID do canal não configurado." };
+
     const targetGuild = guild || await getGuild();
-    if (!targetGuild) return { success: false, message: "Guild (Servidor Discord) não encontrada." };
-    
-    const channelId = database.config.channelId || process.env.CHANNEL_ID;
-    if (!channelId) return { success: false, message: "CHANNEL_ID não configurado." };
+    if (!targetGuild) return { success: false, message: "Servidor Discord não encontrado." };
 
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou sem acesso." };
+
+    const bannerUrl = database.config.bannerUrl || "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop";
 
     const embed = new EmbedBuilder()
       .setTitle("⚔️ HIERARQUIA DO CLÃ ⚔️")
       .setColor("#22c55e")
       .setDescription(await gerarTextoHierarquia())
+      .setImage(bannerUrl)
       .setFooter({ text: "Formato Oficial: |Tag| Nome | ID" })
       .setTimestamp();
 
@@ -258,26 +268,27 @@ async function atualizarQuadro(guild) {
       const msg = await canal.messages.fetch(database.lastMessageId).catch(() => null);
       if (msg) {
         await msg.edit({ embeds: [embed] });
-        salvarBanco();
-        return { success: true, message: "Quadro de hierarquia atualizado com sucesso!" };
+        adicionarLog("quadro_update", "Mensagem de hierarquia editada com sucesso no Discord.");
+        return { success: true, message: "Quadro editado com sucesso!" };
       }
     }
 
     const novaMsg = await canal.send({ embeds: [embed] });
     database.lastMessageId = novaMsg.id;
     salvarBanco();
-    return { success: true, message: "Novo quadro enviado ao Discord com sucesso!" };
+    adicionarLog("quadro_update", "Nova mensagem de hierarquia enviada ao canal do Discord.");
+    return { success: true, message: "Nova mensagem enviada ao quadro do Discord!" };
   } catch (err) {
-    console.error("❌ Erro ao atualizar quadro:", err.message);
-    return { success: false, message: err.message };
+    console.error("❌ Erro ao atualizar quadro no Discord:", err);
+    return { success: false, message: `Erro ao atualizar quadro: ${err.message}` };
   }
 }
 
 async function sincronizarComDiscord(guild) {
-  const targetGuild = guild || await getGuild();
-  if (!targetGuild) return { success: false, message: "Guild não encontrada no Discord." };
-
   try {
+    const targetGuild = guild || await getGuild();
+    if (!targetGuild) return { success: false, message: "Servidor Discord não encontrado." };
+
     const members = await targetGuild.members.fetch();
     let atualizados = 0;
     let removidos = 0;
@@ -291,29 +302,37 @@ async function sincronizarComDiscord(guild) {
         continue;
       }
 
-      const maiorCargo = obterMaiorCargoDiscordMember(member);
-      if (!maiorCargo) {
+      const { cargoPrincipal } = obterCargosDiscordMember(member);
+      if (!cargoPrincipal) {
         removerMembroLocal(userId);
         await removerNicknameOficial(member);
         removidos++;
       }
     }
 
+    Object.keys(database.cargos).forEach((k) => {
+      database.cargos[k] = [];
+    });
+
     for (const [userId, member] of members) {
       if (member.user.bot) continue;
-      const maiorCargo = obterMaiorCargoDiscordMember(member);
-      if (maiorCargo) {
-        const { cargoKey, tag } = maiorCargo;
+      const { cargoPrincipal, temElite } = obterCargosDiscordMember(member);
+
+      if (cargoPrincipal) {
         const membroAtual = database.membros[userId];
-        const nomeLimpo = limparNomeEId(membroAtual?.nome || member.displayName || member.user.username);
-        const idFiveM = membroAtual?.idFiveM || "00";
+        const rawName = member.displayName || member.user.username;
+        const idFiveM = extrairIdFiveM(rawName, membroAtual?.idFiveM);
+        const nomeLimpo = limparNomeEId(membroAtual?.nome || rawName);
+        const tag = TAGS_CARGOS[cargoPrincipal];
 
-        Object.keys(database.cargos).forEach((k) => {
-          database.cargos[k] = (database.cargos[k] || []).filter((id) => id !== userId);
-        });
+        if (!database.cargos[cargoPrincipal].includes(userId)) {
+          database.cargos[cargoPrincipal].push(userId);
+        }
 
-        if (!database.cargos[cargoKey].includes(userId)) {
-          database.cargos[cargoKey].push(userId);
+        if (temElite && cargoPrincipal !== "Elite") {
+          if (!database.cargos.Elite.includes(userId)) {
+            database.cargos.Elite.push(userId);
+          }
         }
 
         database.membros[userId] = {
@@ -321,7 +340,7 @@ async function sincronizarComDiscord(guild) {
           tag,
           nome: nomeLimpo,
           idFiveM,
-          cargo: cargoKey,
+          cargo: cargoPrincipal,
           updatedAt: new Date().toISOString()
         };
 
@@ -355,54 +374,71 @@ function removerMembroLocal(userId) {
   salvarBanco();
 }
 
-/* COMANDOS SLASH */
-const slashCommands = [
-  new SlashCommandBuilder().setName("quadro").setDescription("Exibe a hierarquia oficial (|Tag| Nome | ID)"),
-  new SlashCommandBuilder().setName("sincronizar").setDescription("Sincroniza apelidos e o quadro de hierarquia"),
-  new SlashCommandBuilder()
-    .setName("addcargo")
-    .setDescription("Promove ou adiciona membro na hierarquia")
-    .addStringOption((opt) =>
-      opt.setName("cargo").setDescription("Cargo").setRequired(true)
-        .addChoices(
-          { name: "👑 |Lider| Líder", value: "Lider" },
-          { name: "⚡ |Gerente| Gerente", value: "Gerente" },
-          { name: "💀 |Elite| Elite", value: "Elite" },
-          { name: "🔫 |Membro| Membro", value: "membros" },
-          { name: "🔰 |Recruta| Recruta", value: "Recruta" }
-        )
-    )
-    .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário Discord").setRequired(true))
-    .addStringOption((opt) => opt.setName("nome").setDescription("Nome do membro").setRequired(false))
-    .addStringOption((opt) => opt.setName("id_fivem").setDescription("ID do game").setRequired(false)),
-  new SlashCommandBuilder()
-    .setName("removercargo")
-    .setDescription("Remove o membro da hierarquia")
-    .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário").setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("advertir")
-    .setDescription("Aplica uma advertência")
-    .addUserOption((opt) => opt.setName("usuario").setDescription("Membro").setRequired(true))
-    .addStringOption((opt) => opt.setName("motivo").setDescription("Motivo").setRequired(true)),
-  new SlashCommandBuilder()
-    .setName("advertencias")
-    .setDescription("Lista as advertências de um membro")
-    .addUserOption((opt) => opt.setName("usuario").setDescription("Membro").setRequired(true))
-].map((c) => c.toJSON());
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
+
+async function getGuild() {
+  const { guildId } = database.config;
+  if (!guildId) return null;
+  return client.guilds.fetch(guildId).catch(() => null);
+}
+
+if (database.config.token) {
+  client.login(database.config.token).catch((err) => {
+    console.error("❌ Falha no login do Discord Bot:", err.message);
+  });
+}
 
 async function registrarSlashCommands() {
-  const token = database.config.token || process.env.TOKEN;
-  const clientId = database.config.clientId || process.env.CLIENT_ID;
-  const guildId = database.config.guildId || process.env.GUILD_ID;
+  const { token, clientId, guildId } = database.config;
+  if (!token || !clientId || !guildId) return;
 
-  if (!token || !clientId) return;
+  const commands = [
+    new SlashCommandBuilder().setName("quadro").setDescription("Exibe o quadro de hierarquia atualizado no chat"),
+    new SlashCommandBuilder().setName("sincronizar").setDescription("Sincroniza os cargos do Discord e ajusta apelidos e quadro"),
+    new SlashCommandBuilder()
+      .setName("addcargo")
+      .setDescription("Promove/Adiciona um membro na hierarquia")
+      .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário do Discord").setRequired(true))
+      .addStringOption((opt) =>
+        opt
+          .setName("cargo")
+          .setDescription("Novo cargo")
+          .setRequired(true)
+          .addChoices(
+            { name: "Líder", value: "Lider" },
+            { name: "Gerente", value: "Gerente" },
+            { name: "Elite", value: "Elite" },
+            { name: "Membro", value: "membros" },
+            { name: "Recruta", value: "Recruta" }
+          )
+      )
+      .addStringOption((opt) => opt.setName("id_fivem").setDescription("ID no FiveM (opcional)"))
+      .addStringOption((opt) => opt.setName("nome").setDescription("Nome limpo (opcional)")),
+    new SlashCommandBuilder()
+      .setName("removercargo")
+      .setDescription("Remove um membro da hierarquia e restaura seu apelido")
+      .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário do Discord").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("advertir")
+      .setDescription("Aplica uma advertência a um membro")
+      .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário").setRequired(true))
+      .addStringOption((opt) => opt.setName("motivo").setDescription("Motivo da advertência").setRequired(true)),
+    new SlashCommandBuilder()
+      .setName("advertencias")
+      .setDescription("Consulta as advertências de um membro")
+      .addUserOption((opt) => opt.setName("usuario").setDescription("Usuário").setRequired(true))
+  ].map((cmd) => cmd.toJSON());
+
   try {
     const rest = new REST({ version: "10" }).setToken(token);
-    if (guildId) {
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: slashCommands });
-    } else {
-      await rest.put(Routes.applicationCommands(clientId), { body: slashCommands });
-    }
+    await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
     console.log("✅ Slash Commands registrados com sucesso!");
   } catch (err) {
     console.error("❌ Erro ao registrar Slash Commands:", err.message);
@@ -414,15 +450,14 @@ client.on("ready", async () => {
   await registrarSlashCommands();
 });
 
-/* EVENTO: REMOÇÃO/ADIÇÃO DE CARGOS NO DISCORD EM TEMPO REAL */
+/* DETECTA RETIRADA / ADIÇÃO DE CARGOS EM TEMPO REAL */
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   try {
     const guild = newMember.guild;
-    const oldCargoInfo = obterMaiorCargoDiscordMember(oldMember);
-    const newCargoInfo = obterMaiorCargoDiscordMember(newMember);
+    const oldInfo = obterCargosDiscordMember(oldMember);
+    const newInfo = obterCargosDiscordMember(newMember);
 
-    // Se o membro PERDEU o cargo de hierarquia no Discord
-    if (oldCargoInfo && !newCargoInfo) {
+    if (oldInfo.cargoPrincipal && !newInfo.cargoPrincipal) {
       console.log(`⚡ Cargo removido de @${newMember.user.tag} no Discord!`);
       
       removerMembroLocal(newMember.id);
@@ -435,21 +470,28 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
       await atualizarQuadro(guild);
     } 
-    // Se o membro GANHOU ou MUDOU de cargo no Discord
-    else if (newCargoInfo && (!oldCargoInfo || oldCargoInfo.cargoKey !== newCargoInfo.cargoKey)) {
-      console.log(`⚡ Cargo de @${newMember.user.tag} alterado para ${newCargoInfo.cargoKey} no Discord!`);
+    else if (newInfo.cargoPrincipal) {
+      console.log(`⚡ Cargo de @${newMember.user.tag} atualizado para ${newInfo.cargoPrincipal} no Discord!`);
 
-      const { cargoKey, tag } = newCargoInfo;
+      const { cargoPrincipal, temElite } = newInfo;
+      const tag = TAGS_CARGOS[cargoPrincipal];
       const membroAtual = database.membros[newMember.id];
-      const nomeLimpo = limparNomeEId(membroAtual?.nome || newMember.displayName || newMember.user.username);
-      const idFiveM = membroAtual?.idFiveM || "00";
+      const rawName = newMember.displayName || newMember.user.username;
+      const idFiveM = extrairIdFiveM(rawName, membroAtual?.idFiveM);
+      const nomeLimpo = limparNomeEId(membroAtual?.nome || rawName);
 
       Object.keys(database.cargos).forEach((k) => {
         database.cargos[k] = (database.cargos[k] || []).filter((id) => id !== newMember.id);
       });
 
-      if (!database.cargos[cargoKey].includes(newMember.id)) {
-        database.cargos[cargoKey].push(newMember.id);
+      if (!database.cargos[cargoPrincipal].includes(newMember.id)) {
+        database.cargos[cargoPrincipal].push(newMember.id);
+      }
+
+      if (temElite && cargoPrincipal !== "Elite") {
+        if (!database.cargos.Elite.includes(newMember.id)) {
+          database.cargos.Elite.push(newMember.id);
+        }
       }
 
       database.membros[newMember.id] = {
@@ -457,7 +499,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
         tag,
         nome: nomeLimpo,
         idFiveM,
-        cargo: cargoKey,
+        cargo: cargoPrincipal,
         updatedAt: new Date().toISOString()
       };
 
@@ -466,7 +508,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
 
       adicionarLog(
         "discord_role_change",
-        `Cargo de @${newMember.user.username} alterado para ${tag} no Discord. Apelido e quadro atualizados.`
+        `Cargo de @${newMember.user.username} alterado para ${tag} no Discord.`
       );
 
       await atualizarQuadro(guild);
@@ -505,9 +547,24 @@ client.on("interactionCreate", async (interaction) => {
   if (commandName === "addcargo") {
     const cargo = options.getString("cargo");
     const targetUser = options.getUser("usuario");
-    const nome = options.getString("nome") || targetUser.username;
-    const idFiveM = options.getString("id_fivem") || "00";
+    const nomeInput = options.getString("nome");
+    const idInput = options.getString("id_fivem");
     const tag = TAGS_CARGOS[cargo];
+
+    let idFiveM = idInput && idInput !== "00" && idInput !== "0" ? idInput.trim() : "";
+    let nomeLimpo = nomeInput ? limparNomeEId(nomeInput) : targetUser.username;
+
+    if (guild) {
+      const mem = await guild.members.fetch(targetUser.id).catch(() => null);
+      if (mem) {
+        if (!idFiveM) {
+          idFiveM = extrairIdFiveM(mem.displayName, "");
+        }
+        if (!nomeInput) {
+          nomeLimpo = limparNomeEId(mem.displayName || targetUser.username);
+        }
+      }
+    }
 
     Object.keys(database.cargos).forEach((k) => {
       database.cargos[k] = (database.cargos[k] || []).filter((id) => id !== targetUser.id);
@@ -516,7 +573,6 @@ client.on("interactionCreate", async (interaction) => {
       database.cargos[cargo].push(targetUser.id);
     }
 
-    const nomeLimpo = limparNomeEId(nome);
     database.membros[targetUser.id] = { userId: targetUser.id, tag, nome: nomeLimpo, idFiveM, cargo, updatedAt: new Date().toISOString() };
     database.estatisticas.promocoes++;
     salvarBanco();
@@ -529,7 +585,8 @@ client.on("interactionCreate", async (interaction) => {
       await atualizarQuadro(guild);
     }
 
-    return interaction.reply({ content: `✅ ${targetUser} promovido para **${tag} ${nomeLimpo} | ${idFiveM}**!` });
+    const fmt = idFiveM ? `${tag} ${nomeLimpo} | ${idFiveM}` : `${tag} ${nomeLimpo}`;
+    return interaction.reply({ content: `✅ ${targetUser} promovido para **${fmt}**!` });
   }
 
   if (commandName === "removercargo") {
@@ -574,67 +631,39 @@ client.on("interactionCreate", async (interaction) => {
 
     const lista = advs.map((a, i) => `**${i + 1}.** ${a.motivo} *(por @${a.autor} em ${a.data})*`).join("\n");
     return interaction.reply({
-      embeds: [new EmbedBuilder().setTitle(`⚠️ Advertências de ${targetUser.username}`).setColor("#ef4444").setDescription(lista)]
+      embeds: [new EmbedBuilder().setTitle(`⚠️ Advertências - ${targetUser.username}`).setColor("#eab308").setDescription(lista)]
     });
   }
 });
 
-/* CONEXÃO DISCORD */
-async function conectarBot() {
-  const token = database.config.token || process.env.TOKEN;
-  if (!token) {
-    console.log("⚠️ Nenhum TOKEN do Discord configurado.");
-    return;
-  }
-
-  try {
-    if (client.isReady()) {
-      await client.destroy();
-    }
-    await client.login(token);
-  } catch (err) {
-    console.error("❌ Falha ao conectar o Bot Discord:", err.message);
-  }
-}
-
-/* EXPRESS SERVER */
+/* SERVIDOR API EXPRESS */
 const app = express();
 app.use(express.json());
 
-app.get("/api/status", async (_, res) => {
-  const guild = await getGuild();
-  let channelName = "";
-  if (guild && database.config.channelId) {
-    const ch = await guild.channels.fetch(database.config.channelId).catch(() => null);
-    if (ch) channelName = ch.name;
-  }
-
-  res.json({
-    online: client.isReady(),
-    botUser: client.user?.tag || "Desconectado",
-    guildName: guild?.name || "Desconectado",
-    channelName: channelName ? `#${channelName}` : undefined,
-    totalMembros: Object.values(database.cargos).reduce((acc, l) => acc + l.length, 0),
-    database,
-    config: database.config,
-    textoHierarquia: await gerarTextoHierarquia()
-  });
+app.get("/api/data", (_, res) => {
+  res.json(database);
 });
 
 app.post("/api/config", async (req, res) => {
-  const { token, clientId, guildId, channelId } = req.body;
+  const { token, clientId, guildId, channelId, bannerUrl } = req.body;
   database.config = {
     token: token ?? database.config.token,
     clientId: clientId ?? database.config.clientId,
     guildId: guildId ?? database.config.guildId,
-    channelId: channelId ?? database.config.channelId
+    channelId: channelId ?? database.config.channelId,
+    bannerUrl: bannerUrl ?? database.config.bannerUrl
   };
   salvarBanco();
   adicionarLog("sistema", "Configurações do bot atualizadas via Painel Web.");
 
-  await conectarBot();
+  if (token && token !== client.token) {
+    client.destroy();
+    client.login(token).then(() => registrarSlashCommands()).catch((err) => console.error("❌ Erro ao logar com novo token:", err.message));
+  } else if (token) {
+    await registrarSlashCommands();
+  }
 
-  res.json({ success: true, message: "Configurações salvas e bot reconectado!", config: database.config });
+  res.json({ success: true, message: "Configurações atualizadas com sucesso!" });
 });
 
 app.post("/api/sync", async (_, res) => {
@@ -656,8 +685,21 @@ app.post("/api/add-membro", async (req, res) => {
   }
 
   const tag = TAGS_CARGOS[cargo] || "|Membro|";
-  const nomeLimpo = limparNomeEId(nome || "Membro");
-  const idGame = idFiveM || "00";
+  let idGame = idFiveM && idFiveM !== "00" && idFiveM !== "0" ? idFiveM.trim() : "";
+  let nomeLimpo = limparNomeEId(nome || "Membro");
+
+  const guild = await getGuild();
+  if (guild) {
+    const mem = await guild.members.fetch(userId).catch(() => null);
+    if (mem) {
+      if (!idGame) {
+        idGame = extrairIdFiveM(mem.displayName, "");
+      }
+      if (!nome) {
+        nomeLimpo = limparNomeEId(mem.displayName || mem.user.username);
+      }
+    }
+  }
 
   Object.keys(database.cargos).forEach((k) => {
     database.cargos[k] = (database.cargos[k] || []).filter((id) => id !== userId);
@@ -677,9 +719,8 @@ app.post("/api/add-membro", async (req, res) => {
 
   database.estatisticas.promocoes++;
   salvarBanco();
-  adicionarLog("promocao", `Membro ${nomeLimpo} (${userId}) definido para ${tag} ${idGame}`);
+  adicionarLog("promocao", `Membro ${nomeLimpo} (${userId}) definido para ${tag}${idGame ? ` | ${idGame}` : ""}`);
 
-  const guild = await getGuild();
   if (guild) {
     const mem = await guild.members.fetch(userId).catch(() => null);
     if (mem) {
@@ -715,7 +756,7 @@ app.post("/api/remover-membro", async (req, res) => {
 
 app.post("/api/advertir", (req, res) => {
   const { userId, motivo, autor } = req.body;
-  if (!userId || !motivo) return res.status(400).json({ success: false, message: "Campos obrigatórios ausentes." });
+  if (!userId || !motivo) return res.status(400).json({ success: false, message: "Parâmetros inválidos." });
 
   const adv = {
     id: Date.now().toString(),
@@ -728,20 +769,30 @@ app.post("/api/advertir", (req, res) => {
 
   database.advertencias.unshift(adv);
   salvarBanco();
-  adicionarLog("advertencia", `Advertência para ${adv.nome}: ${motivo}`);
+  adicionarLog("advertencia", `Advertência aplicada a ${adv.nome} (${userId}): ${motivo}`);
 
-  res.json({ success: true, message: "Advertência registrada!", advertencia: adv });
+  res.json({ success: true, message: "Advertência registrada!" });
 });
 
-app.delete("/api/advertencias/:id", (req, res) => {
-  const { id } = req.params;
-  database.advertencias = database.advertencias.filter((a) => a.id !== id);
-  salvarBanco();
-  res.json({ success: true, message: "Advertência removida com sucesso." });
-});
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (_, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 Servidor rodando na porta ${PORT}`);
-});
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  });
+}
 
-conectarBot();
+startServer();
