@@ -222,7 +222,7 @@ client.on('guildMemberRemove', async member => {
       await sendLogEmbed(
         member.guild,
         '🚪 Membro Saiu do Servidor',
-        `O jogador **${removed.name}** (`ID: ${removed.id}`) saiu do servidor do Discord e foi removido da hierarquia.`,
+        `O jogador **${removed.name}** (ID: ${removed.id}) saiu do servidor do Discord e foi removido da hierarquia.`,
         0xF59E0B,
         [
           { name: '👤 Jogador', value: removed.name, inline: true },
