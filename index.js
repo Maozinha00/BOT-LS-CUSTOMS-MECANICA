@@ -3,8 +3,8 @@
  * Requisitos: Node.js v18+ e discord.js v14
  * 
  * Instruções de instalação local / VPS:
- * 1. Crie uma pasta no seu PC e execute: npm init -y
- * 2. Instale as dependências: npm install discord.js dotenv
+ * 1. crie uma pasta no seu PC e execute: npm init -y
+ * 2. instale as dependências: npm install discord.js dotenv
  * 3. Crie um arquivo .env com:
  *    DISCORD_TOKEN=seu_token_aqui
  *    GUILD_ID=seu_guild_id_aqui
@@ -12,7 +12,18 @@
  */
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
-require('dotenv').config();
+
+// Carregamento seguro do dotenv (evita crash se o dotenv não estiver instalado)
+try {
+  require('dotenv').config();
+} catch (err) {
+  console.log('ℹ️ pacote dotenv não instalado. Usando variáveis do sistema de ambiente.');
+}
+
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ ERRO CRÍTICO: DISCORD_TOKEN não foi encontrado nas variáveis de ambiente!');
+  console.error('Certifique-se de executar "npm install dotenv" e ter um arquivo .env configurado.');
+}
 
 const client = new Client({
   intents: [
@@ -54,7 +65,7 @@ const FACTION_PLAYERS = [
 client.once('ready', async () => {
   console.log(`✅ Bot rodando com sucesso como: ${client.user.tag}`);
   
-  // Registrar Comandos Slash /sincronizar e /hierarquia
+  // Registrar Comando /sincronizar
   const commands = [
     new SlashCommandBuilder()
       .setName('sincronizar')
