@@ -13,7 +13,6 @@ import {
   TextChannel
 } from "discord.js";
 
-const currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 const PORT = process.env.PORT || 3000;
 
 export type CargoKey = "Lider" | "Gerente" | "Elite" | "membros" | "Recruta";
@@ -100,9 +99,7 @@ function carregarBanco() {
       const data = fs.readFileSync(DB_PATH, "utf-8");
       const parsed = JSON.parse(data);
       database = { ...database, ...parsed };
-      if (!database.config) {
-        database.config = {} as any;
-      }
+      if (!database.config) database.config = {} as any;
       if (!database.config.channelId) database.config.channelId = "1527817862532694026";
       if (!database.config.entryChannelId) database.config.entryChannelId = "1524222632923496509";
       if (!database.config.logsChannelId) database.config.logsChannelId = "1515448473246498866";
@@ -171,9 +168,7 @@ export function extrairIdFiveM(...inputs: (string | undefined | null)[]): string
       return pipeMatch[1];
     }
 
-    if (/^\d{1,8}$/.test(str)) {
-      return str;
-    }
+    if (/^\d{1,8}$/.test(str)) return str;
 
     const endMatch = str.match(/(?:[\s|_|\-·•\/\\|#()\[\]]+|^)(\d{1,8})\s*$/);
     if (endMatch && endMatch[1] && endMatch[1] !== "00" && endMatch[1] !== "0") {
@@ -187,20 +182,15 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
   if (!nomeRaw) return "Membro";
   let temp = String(nomeRaw).trim();
 
-  // 1. Remover menções do Discord
   temp = temp.replace(/<@!?\d{17,20}>/g, "").replace(/^@+/g, "");
-
-  // 2. Remover handles/tags entre parênteses no final
   temp = temp.replace(/\([a-zA-Z0-9._-]{2,32}\)$/g, "").trim();
 
-  // 3. Remover tags anteriores entre barras/colchetes
   let prevTemp = "";
   while (temp !== prevTemp) {
     prevTemp = temp;
     temp = temp.replace(/^[|\[(]\s*[^|\])]+\s*[|\])]\s*/g, "").trim();
   }
 
-  // 4. Remover tags de cargo e emojis
   const tagsRegex = [
     /\|\s*(lider|líder|gerente|elite|membro|membros|recruta)\s*\|\s*/gi,
     /\[\s*(lider|líder|gerente|elite|membros|membro|recruta)\s*\]\s*/gi,
@@ -212,7 +202,6 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
     temp = temp.replace(r, "");
   }
 
-  // 5. Remover ID conhecido
   if (idFiveMConhecido && idFiveMConhecido.trim()) {
     const idEscaped = idFiveMConhecido.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const idRegexes = [
@@ -227,11 +216,8 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
     }
   }
 
-  // 6. Remover separadores finais com números
   temp = temp.replace(/[\s|_|\-·•\/\\|]+\d{1,8}\s*$/gi, "");
   temp = temp.replace(/^[\s|_|\-·•\/\\|]+\d{1,8}[\s|_|\-·•\/\\|]+/gi, "");
-
-  // 7. Limpeza final
   temp = temp.replace(/^[|\[\]()\-\s]+|[|\[\]()\-\s]+$/g, "").trim();
   temp = temp.replace(/\s+/g, " ").trim();
 
@@ -241,10 +227,7 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
 export function formatarLinhaMembro(tag: string, nome: string, idFiveM: string | undefined, cargoKey: CargoKey): string {
   const idValido = idFiveM && idFiveM !== "00" && idFiveM !== "0" && idFiveM.trim() !== "" ? idFiveM.trim() : "";
   const nomeLimpo = limparNomeEId(nome, idValido);
-  if (idValido) {
-    return `└ ${tag} ${nomeLimpo} | ${idValido}`;
-  }
-  return `└ ${tag} ${nomeLimpo}`;
+  return idValido ? `└ ${tag} ${nomeLimpo} | ${idValido}` : `└ ${tag} ${nomeLimpo}`;
 }
 
 async function aplicarNicknameOficial(member: any, tagFormatted: string, nome: string, idFiveM: string) {
@@ -278,11 +261,7 @@ async function aplicarNicknameOficial(member: any, tagFormatted: string, nome: s
 
 export function identificarCargoPorNomeDiscord(roleName: string): CargoKey | null {
   if (!roleName) return null;
-  const norm = roleName
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
+  const norm = roleName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
   if (norm.includes("lider")) return "Lider";
   if (norm.includes("gerent") || norm.includes("gerenc")) return "Gerente";
@@ -327,7 +306,6 @@ export async function gerarTextoHierarquia() {
     });
 
     const nomes: string[] = [];
-
     for (const id of lista) {
       const memData = database.membros[id];
       if (!memData) continue;
@@ -414,20 +392,6 @@ function extrairDadosDeAprovacao(msg: any) {
 
   if (msg.embeds && msg.embeds.length) {
     msg.embeds.forEach((e: any) => {
-      const mentionField = e.fields?.find((f: any) =>
-        f.name && (f.name.includes("Usuário Discord") || f.name.toLowerCase().includes("usuario"))
-      );
-      if (mentionField && mentionField.value) {
-        const discordId = mentionField.value.match(/\d{17,20}/)?.[0];
-        if (discordId) {
-          targetUserIds.add(discordId);
-        }
-        const handleMatch = mentionField.value.match(/\(([a-zA-Z0-9._-]{2,32})\)/);
-        if (handleMatch && handleMatch[1]) {
-          userHandles.add(handleMatch[1]);
-        }
-      }
-
       e.fields?.forEach((f: any) => {
         const fieldName = (f.name || "").toLowerCase();
         const fieldValue = f.value || "";
@@ -450,79 +414,21 @@ function extrairDadosDeAprovacao(msg: any) {
           if (idExtracted) foundFiveMId = idExtracted;
 
           const tagMatch = rawApelido.match(/^\|([^|]+)\|/);
-          if (tagMatch) {
-            foundTag = `|${tagMatch[1].trim()}|`;
-          }
+          if (tagMatch) foundTag = `|${tagMatch[1].trim()}|`;
 
           foundNome = limparNomeEId(rawApelido, foundFiveMId);
         }
 
         if (fieldName.includes("id no jogo") || fieldName.includes("id")) {
           const cleanId = fieldValue.replace(/\D/g, "");
-          if (cleanId && cleanId !== "00" && cleanId !== "0") {
-            foundFiveMId = cleanId;
-          }
+          if (cleanId && cleanId !== "00" && cleanId !== "0") foundFiveMId = cleanId;
         }
 
         if (fieldName.includes("nome no jogo") || fieldName.includes("nome")) {
-          if (!foundNome) {
-            foundNome = limparNomeEId(fieldValue, foundFiveMId);
-          }
+          if (!foundNome) foundNome = limparNomeEId(fieldValue, foundFiveMId);
         }
       });
     });
-  }
-
-  const tagMatchInText = fullText.match(/\|(Lider|Gerente|Elite|Membro|Recruta)\|/i);
-  if (tagMatchInText && !foundTag) {
-    foundTag = `|${tagMatchInText[1]}|`;
-  }
-
-  const apelidoBlocoMatch = fullText.match(/Apelido a Aplicar[\s\S]*?```([\s\S]*?)```/i) ||
-                             fullText.match(/Apelido a Aplicar[\s\S]*?`([^`]+)`/i);
-  if (apelidoBlocoMatch && apelidoBlocoMatch[1]) {
-    const textoApelido = apelidoBlocoMatch[1].trim();
-    const parts = textoApelido.split("|").map(p => p.trim());
-
-    if (parts.length >= 2) {
-      const matchedCargo = TAGS_CARGOS[Object.keys(TAGS_CARGOS).find(k => k.toLowerCase() === parts[0].toLowerCase()) as CargoKey];
-      if (matchedCargo) {
-        foundTag = matchedCargo;
-        if (parts[2]) {
-          const idCandidate = parts[2].replace(/\D/g, "");
-          if (idCandidate && idCandidate !== "00" && idCandidate !== "0") {
-            foundFiveMId = idCandidate;
-          }
-        }
-        foundNome = limparNomeEId(parts[1], foundFiveMId);
-      } else {
-        const idCandidate = parts[1].replace(/\D/g, "");
-        if (idCandidate && idCandidate !== "00" && idCandidate !== "0") {
-          foundFiveMId = idCandidate;
-        }
-        foundNome = limparNomeEId(parts[0], foundFiveMId);
-      }
-    }
-  }
-
-  if (!foundFiveMId) {
-    const directIdMatch = fullText.match(/(?:ID|Passaporte|Pass)[:\s]+(\d{1,8})/i) ||
-                           fullText.match(/\bID\s*(\d{1,8})\b/i);
-    if (directIdMatch && directIdMatch[1] && directIdMatch[1] !== "00" && directIdMatch[1] !== "0") {
-      foundFiveMId = directIdMatch[1];
-    }
-  }
-
-  if (!foundNome) {
-    const pipeNameMatch = fullText.match(/\|(?:Lider|Gerente|Elite|Membro|Recruta)\|\s*([^|#\n]+?)\s*\|/i);
-    if (pipeNameMatch && pipeNameMatch[1]) {
-      foundNome = limparNomeEId(pipeNameMatch[1].trim(), foundFiveMId);
-    } else {
-      const explicitNameMatch = fullText.match(/(?:Nome|Nick)[:\s]+([A-Za-z0-9_À-ÿ\s]{2,20})/i);
-      if (explicitNameMatch && explicitNameMatch[1]) {
-        foundNome = limparNomeEId(explicitNameMatch[1].trim(), foundFiveMId);
-      }
-    }
   }
 
   return {
@@ -543,16 +449,11 @@ async function sincronizarApelidos(guild: any) {
   let ultimaMensagem: string | undefined;
 
   do {
-    const mensagens: any = await canal.messages.fetch({
-      limit: 100,
-      before: ultimaMensagem
-    }).catch(() => null);
-
+    const mensagens: any = await canal.messages.fetch({ limit: 100, before: ultimaMensagem }).catch(() => null);
     if (!mensagens || !mensagens.size) break;
 
     for (const msg of mensagens.values()) {
       if (!msg.embeds.length) continue;
-
       const embed = msg.embeds[0];
 
       const usuario = embed.fields?.find((f: any) => f.name && f.name.includes("Usuário Discord"));
@@ -563,32 +464,23 @@ async function sincronizarApelidos(guild: any) {
       const match = usuario.value.match(/<@!?(\d+)>/) || usuario.value.match(/(\d{17,20})/);
       if (!match) continue;
 
-      const discordId = match[1];
-
-      const member = await guild.members.fetch(discordId).catch(() => null);
+      const member = await guild.members.fetch(match[1]).catch(() => null);
       if (!member) continue;
 
       const nick = apelido.value.replace(/[`*]/g, "").trim();
 
       if (member.nickname !== nick) {
-        try {
-          await member.setNickname(nick);
-          console.log(`✅ ${member.user.tag} -> ${nick}`);
-        } catch (err: any) {
-          console.log(`❌ ${member.user.tag}: ${err.message}`);
-        }
+        await member.setNickname(nick).catch(() => null);
       }
     }
 
-    ultimaMensagem = mensagens.last().id;
-
+    ultimaMensagem = mensagens.last()?.id;
   } while (ultimaMensagem);
 }
 
 async function buscarDadosNoCanalDeLogs(targetGuild: any) {
   const logsChannelId = database.config.logsChannelId || "1515448473246498866";
   const entryChannelId = database.config.entryChannelId || "1524222632923496509";
-
   const userLogsData: Record<string, { tag?: string; nome?: string; idFiveM?: string }> = {};
 
   const processChannel = async (chanId: string) => {
@@ -596,49 +488,19 @@ async function buscarDadosNoCanalDeLogs(targetGuild: any) {
       const channel = await targetGuild.channels.fetch(chanId).catch(() => null);
       if (!channel || !channel.isTextBased()) return;
 
-      let lastId: string | undefined = undefined;
-      let fetchedCount = 0;
-      let allMsgs: any[] = [];
+      const messages = await channel.messages.fetch({ limit: 100 }).catch(() => null);
+      if (!messages) return;
 
-      while (fetchedCount < 300) {
-        const options: any = { limit: 100 };
-        if (lastId) options.before = lastId;
-
-        const messages = await channel.messages.fetch(options).catch(() => null);
-        if (!messages || messages.size === 0) break;
-
-        allMsgs.push(...Array.from(messages.values()));
-        fetchedCount += messages.size;
-        lastId = messages.last()?.id;
-      }
-
-      for (const msg of allMsgs) {
+      for (const msg of messages.values()) {
         const extracted = extrairDadosDeAprovacao(msg);
-        const { targetUserIds, userHandles, tag, nome, idFiveM } = extracted;
+        const { targetUserIds, tag, nome, idFiveM } = extracted;
 
-        const resolvedIds = new Set<string>(targetUserIds);
-
-        if (resolvedIds.size === 0 && userHandles.length > 0 && targetGuild.members.cache) {
-          userHandles.forEach((handle) => {
-            const foundMem = targetGuild.members.cache.find((m: any) =>
-              m.user?.username?.toLowerCase() === handle.toLowerCase() ||
-              m.user?.tag?.toLowerCase() === handle.toLowerCase()
-            );
-            if (foundMem) resolvedIds.add(foundMem.id);
-          });
-        }
-
-        if (resolvedIds.size > 0) {
-          resolvedIds.forEach((uid) => {
-            if (targetGuild.members.cache.get(uid)?.user?.bot) return;
-
-            if (!userLogsData[uid]) userLogsData[uid] = {};
-
-            if (tag && !userLogsData[uid].tag) userLogsData[uid].tag = tag;
-            if (nome && !userLogsData[uid].nome) userLogsData[uid].nome = nome;
-            if (idFiveM && !userLogsData[uid].idFiveM) userLogsData[uid].idFiveM = idFiveM;
-          });
-        }
+        targetUserIds.forEach((uid) => {
+          if (!userLogsData[uid]) userLogsData[uid] = {};
+          if (tag && !userLogsData[uid].tag) userLogsData[uid].tag = tag;
+          if (nome && !userLogsData[uid].nome) userLogsData[uid].nome = nome;
+          if (idFiveM && !userLogsData[uid].idFiveM) userLogsData[uid].idFiveM = idFiveM;
+        });
       }
     } catch (e) {
       console.error(`Erro ao varrer canal ${chanId}:`, e);
@@ -674,23 +536,6 @@ export async function sincronizarHierarquia() {
     const logsExtractedData = await buscarDadosNoCanalDeLogs(targetGuild);
     await sincronizarApelidos(targetGuild);
 
-    const entryChannelId = database.config.entryChannelId || "1524222632923496509";
-    const entryTimestamps: Record<string, number> = {};
-    try {
-      const entryChan = await targetGuild.channels.fetch(entryChannelId).catch(() => null);
-      if (entryChan && entryChan.isTextBased()) {
-        const msgs = await entryChan.messages.fetch({ limit: 100 }).catch(() => null);
-        if (msgs) {
-          msgs.forEach((m: any) => {
-            const uid = m.mentions?.users?.first()?.id;
-            if (uid && !entryTimestamps[uid]) {
-              entryTimestamps[uid] = m.createdTimestamp;
-            }
-          });
-        }
-      }
-    } catch (err) {}
-
     targetGuild.members.cache.forEach((member: any) => {
       if (member.user.bot) return;
 
@@ -710,7 +555,7 @@ export async function sincronizarHierarquia() {
         const nomeLimpo = limparNomeEId(nomeBruto, idFiveM);
         const tag = TAGS_CARGOS[cargoPrincipal];
 
-        const joinTs = member.joinedTimestamp || entryTimestamps[member.id] || Date.now();
+        const joinTs = member.joinedTimestamp || Date.now();
         const joinIso = new Date(joinTs).toISOString();
 
         novosMembros[member.id] = {
@@ -734,8 +579,7 @@ export async function sincronizarHierarquia() {
       }
     });
 
-    const antigosIds = Object.keys(database.membros);
-    antigosIds.forEach((id) => {
+    Object.keys(database.membros).forEach((id) => {
       if (!novosMembros[id]) removidos++;
     });
 
@@ -767,28 +611,20 @@ async function registrarComandosSlash() {
   }
 
   const commands = [
-    new SlashCommandBuilder()
-      .setName("quadro")
-      .setDescription("Envia ou atualiza o quadro da hierarquia no canal configurado."),
-    new SlashCommandBuilder()
-      .setName("sincronizar")
-      .setDescription("Sincroniza os membros do servidor com a hierarquia automaticamente."),
+    new SlashCommandBuilder().setName("quadro").setDescription("Envia ou atualiza o quadro da hierarquia no canal configurado."),
+    new SlashCommandBuilder().setName("sincronizar").setDescription("Sincroniza os membros do servidor com a hierarquia automaticamente."),
     new SlashCommandBuilder()
       .setName("setcargo")
       .setDescription("Altera o cargo de um membro manualmente.")
       .addUserOption((opt) => opt.setName("usuario").setDescription("Membro").setRequired(true))
       .addStringOption((opt) =>
-        opt
-          .setName("cargo")
-          .setDescription("Novo cargo")
-          .setRequired(true)
-          .addChoices(
-            { name: "Líder", value: "Lider" },
-            { name: "Gerente", value: "Gerente" },
-            { name: "Elite", value: "Elite" },
-            { name: "Membro", value: "membros" },
-            { name: "Recruta", value: "Recruta" }
-          )
+        opt.setName("cargo").setDescription("Novo cargo").setRequired(true).addChoices(
+          { name: "Líder", value: "Lider" },
+          { name: "Gerente", value: "Gerente" },
+          { name: "Elite", value: "Elite" },
+          { name: "Membro", value: "membros" },
+          { name: "Recruta", value: "Recruta" }
+        )
       ),
     new SlashCommandBuilder()
       .setName("adv")
@@ -817,32 +653,23 @@ async function registrarComandosSlash() {
 client.on("ready", async () => {
   console.log(`🤖 Bot Discord online como ${client.user?.tag}`);
   await registrarComandosSlash();
-
   const guild = await getGuild();
-  if (guild) {
-    await sincronizarHierarquia();
-  }
+  if (guild) await sincronizarHierarquia();
 });
 
 client.on("guildMemberAdd", async (member) => {
-  if (member.user.bot) return;
-  setTimeout(() => sincronizarHierarquia(), 3000);
+  if (!member.user.bot) setTimeout(() => sincronizarHierarquia(), 3000);
 });
 
 client.on("guildMemberRemove", async (member) => {
-  if (member.user.bot) return;
-  setTimeout(() => sincronizarHierarquia(), 2000);
+  if (!member.user.bot) setTimeout(() => sincronizarHierarquia(), 2000);
 });
 
 client.on("guildMemberUpdate", async (oldMember, newMember) => {
   if (newMember.user.bot) return;
-
   const rolesAntigas = oldMember.roles.cache.map((r) => r.id).sort().join(",");
   const rolesNovas = newMember.roles.cache.map((r) => r.id).sort().join(",");
-
-  if (rolesAntigas !== rolesNovas) {
-    setTimeout(() => sincronizarHierarquia(), 2000);
-  }
+  if (rolesAntigas !== rolesNovas) setTimeout(() => sincronizarHierarquia(), 2000);
 });
 
 client.on("interactionCreate", async (interaction) => {
@@ -1020,9 +847,7 @@ app.post("/api/membro/cargo", async (req, res) => {
   const guild = await getGuild();
   if (guild) {
     const member = await guild.members.fetch(userId).catch(() => null);
-    if (member) {
-      await aplicarNicknameOficial(member, tag, nomeFinal, idFiveMFinal);
-    }
+    if (member) await aplicarNicknameOficial(member, tag, nomeFinal, idFiveMFinal);
     await atualizarQuadro(guild);
   }
 
@@ -1090,10 +915,10 @@ if (tokenInicial) {
     console.error("❌ Falha no login inicial do bot Discord:", err.message);
   });
 } else {
-  console.log("ℹ️ Nenhum token do Discord fornecido na inicialização. Configure via painel web.");
+  console.log("Nenhum token fornecido no .env. Configure via painel Web.");
 }
 
-/* VITE & EXPRESS LISTENER */
+/* SERVER LISTENER */
 async function startServer() {
   const distPath = path.join(process.cwd(), "dist");
   const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(distPath, "index.html"));
