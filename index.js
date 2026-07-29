@@ -270,6 +270,132 @@ async function updateEmbedInChannel(clientObj, db) {
   }
 }
 
+// Canal ID padrão de Logs Aprovados
+const LOGS_CHANNEL_ID_DEFAULT = "1515448473246498866";
+
+// Função para processar Embed de Registro & Apelido Aprovados
+async function processApprovedLogEmbed(guild, embed) {
+  if (!guild || !embed) return null;
+
+  let apelidoToApply = "";
+  let discordUserText = "";
+  let gameNick = "";
+  let gameId = "";
+  let groupTag = "";
+
+  if (embed.fields && Array.isArray(embed.fields)) {
+    embed.fields.forEach(field => {
+      const name = (field.name || "").toLowerCase();
+      const val = (field.value || "").replace(new RegExp(String.fromCharCode(96), "g"), "").trim();
+
+      if (name.includes("apelido a aplicar")) {
+        apelidoToApply = val;
+      } else if (name.includes("usuário discord") || name.includes("usuario discord")) {
+        discordUserText = val;
+      } else if (name.includes("nome no jogo")) {
+        gameNick = val;
+      } else if (name.includes("id no jogo")) {
+        gameId = val;
+      } else if (name.includes("grupo")) {
+        groupTag = val;
+      }
+    });
+  }
+
+  // Tenta extrair a tag se estiver no formato |Tag|
+  let extractedRank = "Recruta";
+  if (apelidoToApply) {
+    const tagMatch = apelidoToApply.match(/|([^|]+)|/);
+    if (tagMatch) {
+      const tagClean = tagMatch[1].trim().toLowerCase();
+      if (tagClean.includes("lider") || tagClean.includes("líder")) extractedRank = "Lider";
+      else if (tagClean.includes("gerente")) extractedRank = "Gerente";
+      else if (tagClean.includes("elite")) extractedRank = "Elite";
+      else if (tagClean.includes("membro")) extractedRank = "membros";
+      else if (tagClean.includes("recruta")) extractedRank = "Recruta";
+    }
+  }
+
+  // Tenta extrair o ID numérico final se existir (Ex: 11249)
+  if (!gameId && apelidoToApply) {
+    const idMatch = apelidoToApply.match(/|s*(d+)s*$/);
+    if (idMatch) gameId = idMatch[1];
+  }
+
+  // Tenta extrair o username do Discord
+  const userMatch = discordUserText.match(/(([^)]+))/) || discordUserText.match(/<@!?(d+)>/) || discordUserText.match(/@([w._]+)/);
+  const targetUsername = userMatch ? userMatch[1].replace(/^@/, "") : "";
+
+  return {
+    apelidoToApply,
+    discordUserText,
+    targetUsername,
+    gameNick,
+    gameId,
+    extractedRank
+  };
+}
+
+// Evento para capturar novas mensagens de logs em tempo real
+client.on("messageCreate", async (message) => {
+  if (!message.guild || message.author.id === client.user?.id) return;
+
+  const db = loadDatabase();
+  const targetLogsChannelId = db.config.logsChannelId || LOGS_CHANNEL_ID_DEFAULT;
+
+  if (message.channel.id === targetLogsChannelId) {
+    if (message.embeds && message.embeds.length > 0) {
+      for (const embed of message.embeds) {
+        if (embed.title?.includes("Registro") || embed.title?.includes("Aprovados") || embed.description?.includes("APROVADO")) {
+          const parsed = await processApprovedLogEmbed(message.guild, embed);
+          if (parsed && parsed.apelidoToApply) {
+            console.log("📌 Novo registro aprovado detectado: " + parsed.apelidoToApply);
+            
+            // Tenta renomear o membro no Discord
+            const members = await message.guild.members.fetch().catch(() => null);
+            if (members) {
+              const targetMember = members.find(m => 
+                (parsed.targetUsername && m.user.username.toLowerCase() === parsed.targetUsername.toLowerCase()) ||
+                (parsed.gameId && m.displayName.includes(parsed.gameId))
+              );
+
+              if (targetMember) {
+                await targetMember.setNickname(parsed.apelidoToApply).catch(() => {});
+              }
+            }
+
+            // Atualiza na hierarquia
+            let groupObj = db.hierarchy.find(h => h.rank.toLowerCase() === parsed.extractedRank.toLowerCase());
+            if (!groupObj) {
+              groupObj = { rank: parsed.extractedRank, color: "#E67E22", members: [] };
+              db.hierarchy.push(groupObj);
+            }
+
+            const existingIdx = groupObj.members.findIndex(m => m.id === parsed.gameId || m.discordTag.toLowerCase() === parsed.targetUsername.toLowerCase());
+            const memberEntry = {
+              id: parsed.gameId || String(Date.now()),
+              discordTag: parsed.targetUsername || "membro_aprovado",
+              gameNick: parsed.apelidoToApply,
+              joinedAt: new Date().toISOString().split("T")[0],
+              addedBy: "Log Aprovado Auto",
+              notes: "Aprovado via Logs (ID: #" + (parsed.gameId || "Auto") + ")"
+            };
+
+            if (existingIdx === -1) {
+              groupObj.members.push(memberEntry);
+            } else {
+              groupObj.members[existingIdx] = memberEntry;
+            }
+
+            saveDatabase(db);
+            await updateEmbedInChannel(client, db);
+          }
+        }
+      }
+    }
+  }
+});
+
 // Comandos e inicialização
 const commands = [
   new SlashCommandBuilder()
@@ -277,7 +403,10 @@ const commands = [
     .setDescription("Exibe ou atualiza a mensagem fixa da hierarquia no canal configurado."),
   new SlashCommandBuilder()
     .setName("sincronizar")
-    .setDescription("Puxa cada pessoa do servidor com o cargo correspondente e adiciona na hierarquia."),
+    .setDescription("Puxa cada pessoa do servidor e sincroniza com o canal de logs aprovados."),
+  new SlashCommandBuilder()
+    .setName("lerlogs")
+    .setDescription("Lê e soma todos os registros de apelidos aprovados no canal de logs (1515448473246498866)."),
   new SlashCommandBuilder()
     .setName("promover")
     .setDescription("Promove um membro para o próximo cargo na hierarquia.")
@@ -304,71 +433,120 @@ client.on(Events.InteractionCreate || "interactionCreate", async (interaction) =
     // CRÍTICO: Responde em < 3s com deferReply() para evitar o erro "O aplicativo não respondeu"
     await interaction.deferReply({ ephemeral: true });
 
-    if (commandName === "sincronizar") {
+    if (commandName === "lerlogs" || commandName === "sincronizar") {
       if (!interaction.guild) {
         return interaction.editReply("❌ Este comando deve ser executado dentro do servidor Discord.");
       }
 
       const db = loadDatabase();
-      const membersFetched = await interaction.guild.members.fetch().catch((e) => {
-        console.error("Erro ao buscar membros no Discord:", e.message);
-        return null;
-      });
+      const logsChannelId = db.config.logsChannelId || LOGS_CHANNEL_ID_DEFAULT;
+      const logsChannel = await interaction.guild.channels.fetch(logsChannelId).catch(() => null);
 
-      if (!membersFetched) {
-        return interaction.editReply(
-          "⚠️ Não foi possível buscar os membros do servidor.\n" +
-          "👉 **Ação necessária:** Ative a opção **SERVER MEMBERS INTENT** no **Discord Developer Portal** (Aba Bot -> Privileged Gateway Intents)."
-        );
+      let processedLogsCount = 0;
+      let logsAdded = [];
+
+      if (logsChannel && logsChannel.isTextBased()) {
+        const messages = await logsChannel.messages.fetch({ limit: 100 }).catch(() => null);
+        if (messages && messages.size > 0) {
+          for (const msg of messages.values()) {
+            if (msg.embeds && msg.embeds.length > 0) {
+              for (const embed of msg.embeds) {
+                if (embed.title?.includes("Registro") || embed.title?.includes("Aprovados") || embed.description?.includes("APROVADO")) {
+                  const parsed = await processApprovedLogEmbed(interaction.guild, embed);
+                  if (parsed && parsed.apelidoToApply) {
+                    processedLogsCount++;
+                    logsAdded.push(parsed.apelidoToApply);
+
+                    let groupObj = db.hierarchy.find(h => h.rank.toLowerCase() === parsed.extractedRank.toLowerCase());
+                    if (!groupObj) {
+                      groupObj = { rank: parsed.extractedRank, color: "#E67E22", members: [] };
+                      db.hierarchy.push(groupObj);
+                    }
+
+                    const existingIdx = groupObj.members.findIndex(m => (parsed.gameId && m.id === parsed.gameId) || (parsed.targetUsername && m.discordTag.toLowerCase() === parsed.targetUsername.toLowerCase()));
+                    const memberEntry = {
+                      id: parsed.gameId || String(Date.now()),
+                      discordTag: parsed.targetUsername || "membro_aprovado",
+                      gameNick: parsed.apelidoToApply,
+                      joinedAt: new Date().toISOString().split("T")[0],
+                      addedBy: "Log Aprovado Auto",
+                      notes: "Aprovado via Logs (#" + (parsed.gameId || "Auto") + ")"
+                    };
+
+                    if (existingIdx === -1) {
+                      groupObj.members.push(memberEntry);
+                    } else {
+                      groupObj.members[existingIdx] = memberEntry;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
-      let countSync = 0;
-      HIERARQUIA_ORDEM.forEach((rankName) => {
-        const role = interaction.guild.roles.cache.find(
-          (r) => r.name.toLowerCase() === rankName.toLowerCase()
-        );
+      // Sincroniza também os cargos de funções caso existam no servidor
+      const membersFetched = await interaction.guild.members.fetch().catch(() => null);
+      let countRolesSync = 0;
+      if (membersFetched) {
+        HIERARQUIA_ORDEM.forEach((rankName) => {
+          const role = interaction.guild.roles.cache.find(
+            (r) => r.name.toLowerCase() === rankName.toLowerCase()
+          );
 
-        let groupObj = db.hierarchy.find(
-          (h) => h.rank.toLowerCase() === rankName.toLowerCase()
-        );
-        if (!groupObj) {
-          groupObj = { rank: rankName, color: "#5865F2", members: [] };
-          db.hierarchy.push(groupObj);
-        }
+          let groupObj = db.hierarchy.find(
+            (h) => h.rank.toLowerCase() === rankName.toLowerCase()
+          );
+          if (!groupObj) {
+            groupObj = { rank: rankName, color: "#5865F2", members: [] };
+            db.hierarchy.push(groupObj);
+          }
 
-        if (role) {
-          role.members.forEach((member) => {
-            if (member.user.bot) return; // Ignora outros bots
+          if (role) {
+            role.members.forEach((member) => {
+              if (member.user.bot) return;
 
-            const discordTag = member.user.username;
-            const gameNick = member.displayName || member.user.username;
-            const existingIndex = groupObj.members.findIndex(
-              (m) => m.discordTag.toLowerCase() === discordTag.toLowerCase() || m.id === member.id
-            );
+              const discordTag = member.user.username;
+              const gameNick = member.displayName || member.user.username;
+              const existingIndex = groupObj.members.findIndex(
+                (m) => m.discordTag.toLowerCase() === discordTag.toLowerCase() || m.id === member.id
+              );
 
-            if (existingIndex === -1) {
-              groupObj.members.push({
-                id: member.id,
-                discordTag: discordTag,
-                gameNick: gameNick,
-                joinedAt: new Date().toISOString().split("T")[0],
-                addedBy: interaction.user.username,
-                notes: "Sincronizado do Discord"
-              });
-              countSync++;
-            } else {
-              groupObj.members[existingIndex].gameNick = gameNick;
-              groupObj.members[existingIndex].discordTag = discordTag;
-            }
-          });
-        }
-      });
+              if (existingIndex === -1) {
+                groupObj.members.push({
+                  id: member.id,
+                  discordTag: discordTag,
+                  gameNick: gameNick,
+                  joinedAt: new Date().toISOString().split("T")[0],
+                  addedBy: interaction.user.username,
+                  notes: "Sincronizado do Discord"
+                });
+                countRolesSync++;
+              }
+            });
+          }
+        });
+      }
 
       saveDatabase(db);
       await updateEmbedInChannel(client, db);
 
+      let totalMembersAll = 0;
+      db.hierarchy.forEach(h => { totalMembersAll += h.members.length; });
+
       await interaction.editReply(
-        `✅ **Sincronização Concluída!** ${countSync} membro(s) processados e atualizados na hierarquia do servidor!`
+        "✅ **Leitura de Logs Concluída!**
+
+" +
+        "📊 **Total de Membros no Painel:** " + totalMembersAll + "
+" +
+        "📋 **Logs de Apelidos Aprovados Processados:** " + processedLogsCount + " (Canal <#" + logsChannelId + ">)
+" +
+        "👥 **Membros por Cargo Sincronizados:** " + countRolesSync + "
+
+" +
+        "*A mensagem fixa da hierarquia foi atualizada e organizada automaticamente!*"
       );
     } else if (commandName === "hierarquia") {
       const db = loadDatabase();
