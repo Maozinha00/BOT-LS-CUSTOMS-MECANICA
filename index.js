@@ -304,7 +304,7 @@ client.on('interactionCreate', async interaction => {
         const res = await syncMemberByRoles(member);
         if (res && res.status === 'synced') {
           synced++;
-          logs.push(`✅ **${res.cleanName}** (`ID: ${res.playerId}`): Cargo **${res.roleInfo.role}**`);
+          logs.push(`✅ **${res.cleanName}** (ID: \`${res.playerId}\`): Cargo **${res.roleInfo.role}**`);
         }
       }
 
