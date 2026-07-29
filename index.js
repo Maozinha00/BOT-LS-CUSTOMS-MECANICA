@@ -201,29 +201,66 @@ function generateHierarchyEmbed(db) {
 
   const embed = new EmbedBuilder()
     .setTitle("👑 HIERARQUIA OFICIAL DA FACÇÃO / GUILDA")
-    .setDescription(`📋 **Total de Membros Registrados:** ${totalMembers}\n⚡ *Atualizado em tempo real via Painel e Bot*`)
-    .setColor(0x5865F2)
-    .setImage(config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg")
-    .setTimestamp()
+    .setDescription("📋 **Total de Membros Registrados:** " + totalMembers + "
+⚡ *Atualizado em tempo real via Painel e Bot*")
+    .setColor(0x5865F2);
+
+  const bannerUrl = (config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg").trim();
+  if (bannerUrl && (bannerUrl.startsWith("http://") || bannerUrl.startsWith("https://"))) {
+    embed.setImage(bannerUrl);
+  }
+
+  embed.setTimestamp()
     .setFooter({ text: "Sistema de Hierarquia Discord • Bot Ativo" });
 
   if (Array.isArray(db?.hierarchy)) {
     db.hierarchy.forEach(group => {
-      let memberListText = "";
+      const rankTitle = (group.rank || "CARGO").toUpperCase();
       const members = group?.members || [];
-      if (members.length === 0) {
-        memberListText = "*Nenhum integrante no cargo.*";
-      } else {
-        members.forEach(mem => {
-          memberListText += `• **${mem.gameNick || "Sem Nick"}** (${mem.discordTag || "Sem Tag"})` + (mem.notes ? ` - *${mem.notes}*` : "") + "\n";
-        });
-      }
 
-      embed.addFields({
-        name: `📌 ${(group.rank || "CARGO").toUpperCase()} (${members.length})`,
-        value: memberListText,
-        inline: false
-      });
+      if (members.length === 0) {
+        embed.addFields({
+          name: "📌 " + rankTitle + " (0)",
+          value: "*Nenhum integrante no cargo.*",
+          inline: false
+        });
+      } else {
+        const lines = members.map(mem => {
+          let line = "• **" + (mem.gameNick || "Sem Nick") + "** (" + (mem.discordTag || "Sem Tag") + ")";
+          if (mem.notes) {
+            line += " - *" + mem.notes + "*";
+          }
+          return line;
+        });
+
+        let currentChunk = "";
+        let chunkIndex = 1;
+
+        for (const line of lines) {
+          if ((currentChunk + line + "
+").length > 950) {
+            embed.addFields({
+              name: chunkIndex === 1 ? "📌 " + rankTitle + " (" + members.length + ")" : "📌 " + rankTitle + " (Cont. " + chunkIndex + ")",
+              value: currentChunk.trim() || "*Nenhum integrante*",
+              inline: false
+            });
+            currentChunk = line + "
+";
+            chunkIndex++;
+          } else {
+            currentChunk += line + "
+";
+          }
+        }
+
+        if (currentChunk.trim().length > 0) {
+          embed.addFields({
+            name: chunkIndex === 1 ? "📌 " + rankTitle + " (" + members.length + ")" : "📌 " + rankTitle + " (Cont. " + chunkIndex + ")",
+            value: currentChunk.trim(),
+            inline: false
+          });
+        }
+      }
     });
   }
 
