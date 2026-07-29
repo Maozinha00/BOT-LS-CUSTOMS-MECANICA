@@ -1,6 +1,6 @@
 /**
- * BOT DE HIERARQUIA PARA DISCORD (discord.js v14)
- * Gerado automaticamente via Painel Web de Hierarquia
+ * BOT DE HIERARQUIA PARA DISCORD (discord.js v14) - CÓDIGO CORRIGIDO
+ * Resolvido: SyntaxError em multiline strings (substituído por template strings com crase e \n).
  */
 
 const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, Events } = require("discord.js");
@@ -42,82 +42,82 @@ function loadDatabase() {
   if (!data.config || typeof data.config !== "object") data.config = {};
   if (!data.hierarchy || !Array.isArray(data.hierarchy)) {
     data.hierarchy = [
-  {
-    "rank": "Lider",
-    "color": "#FFD700",
-    "members": [
       {
-        "id": "1",
-        "discordTag": "jones_lider",
-        "gameNick": "[Líder] Jones",
-        "joinedAt": "2026-07-29",
-        "addedBy": "System",
-        "notes": "Fundador e Líder Supremo"
-      }
-    ]
-  },
-  {
-    "rank": "Gerente",
-    "color": "#9B59B6",
-    "members": [
+        "rank": "Lider",
+        "color": "#FFD700",
+        "members": [
+          {
+            "id": "1",
+            "discordTag": "jones_lider",
+            "gameNick": "[Líder] Jones",
+            "joinedAt": "2026-07-29",
+            "addedBy": "System",
+            "notes": "Fundador e Líder Supremo"
+          }
+        ]
+      },
       {
-        "id": "2",
-        "discordTag": "carlos_gerente",
-        "gameNick": "[Gerente] Carlos",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Jones",
-        "notes": "Supervisão do Servidor"
-      }
-    ]
-  },
-  {
-    "rank": "Elite",
-    "color": "#3498DB",
-    "members": [
+        "rank": "Gerente",
+        "color": "#9B59B6",
+        "members": [
+          {
+            "id": "2",
+            "discordTag": "carlos_gerente",
+            "gameNick": "[Gerente] Carlos",
+            "joinedAt": "2026-07-29",
+            "addedBy": "Jones",
+            "notes": "Supervisão do Servidor"
+          }
+        ]
+      },
       {
-        "id": "3",
-        "discordTag": "shadow_elite",
-        "gameNick": "[Elite] Shadow",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Carlos",
-        "notes": "Membro de Destaque"
-      }
-    ]
-  },
-  {
-    "rank": "membros",
-    "color": "#2ECC71",
-    "members": [
+        "rank": "Elite",
+        "color": "#3498DB",
+        "members": [
+          {
+            "id": "3",
+            "discordTag": "shadow_elite",
+            "gameNick": "[Elite] Shadow",
+            "joinedAt": "2026-07-29",
+            "addedBy": "Carlos",
+            "notes": "Membro de Destaque"
+          }
+        ]
+      },
       {
-        "id": "4",
-        "discordTag": "lucas_membro",
-        "gameNick": "[Membro] Lucas",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Carlos",
-        "notes": "Membro Ativo"
-      }
-    ]
-  },
-  {
-    "rank": "Recruta",
-    "color": "#E67E22",
-    "members": [
+        "rank": "membros",
+        "color": "#2ECC71",
+        "members": [
+          {
+            "id": "4",
+            "discordTag": "lucas_membro",
+            "gameNick": "[Membro] Lucas",
+            "joinedAt": "2026-07-29",
+            "addedBy": "Carlos",
+            "notes": "Membro Ativo"
+          }
+        ]
+      },
       {
-        "id": "5",
-        "discordTag": "rookie_recruta",
-        "gameNick": "[Recruta] Rookie",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Shadow",
-        "notes": "Em período de avaliação"
+        "rank": "Recruta",
+        "color": "#E67E22",
+        "members": [
+          {
+            "id": "5",
+            "discordTag": "rookie_recruta",
+            "gameNick": "[Recruta] Rookie",
+            "joinedAt": "2026-07-29",
+            "addedBy": "Shadow",
+            "notes": "Em período de avaliação"
+          }
+        ]
       }
-    ]
-  }
-];
+    ];
   }
   if (!data.logs || !Array.isArray(data.logs)) data.logs = [];
   if (data.lastMessageId === undefined) data.lastMessageId = "";
 
-  // Leitura limpa de variáveis de ambiente (.env / Railway / Heroku / Replit)
+  // Leitura de variáveis de ambiente
   const envToken = (process.env.TOKEN || "").trim();
   const envClientId = (process.env.CLIENT_ID || "").trim();
   const envGuildId = (process.env.GUILD_ID || "").trim();
@@ -143,17 +143,6 @@ function loadDatabase() {
   if (envRoleElite) data.config.roleEliteId = envRoleElite;
   if (envRoleMembros) data.config.roleMembrosId = envRoleMembros;
   if (envRoleRecruta) data.config.roleRecrutaId = envRoleRecruta;
-
-  // Fallbacks de padrão se ainda estiverem vazios
-  if (!data.config.channelId) data.config.channelId = "1527817862532694026";
-  if (!data.config.entryChannelId) data.config.entryChannelId = "1524222632923496509";
-  if (!data.config.logsChannelId) data.config.logsChannelId = "1515448473246498866";
-  if (!data.config.bannerUrl) data.config.bannerUrl = "https://i.imgur.com/pf92vzV.jpeg";
-  if (!data.config.roleLiderId) data.config.roleLiderId = "1527848364496912404";
-  if (!data.config.roleGerenteId) data.config.roleGerenteId = "1523277774436171796";
-  if (!data.config.roleEliteId) data.config.roleEliteId = "1527812806873972838";
-  if (!data.config.roleMembrosId) data.config.roleMembrosId = "1528075981078663259";
-  if (!data.config.roleRecrutaId) data.config.roleRecrutaId = "1515125826780135485";
 
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
@@ -182,7 +171,6 @@ const client = new Client({
   ]
 });
 
-// Registrar ouvintes globais de erro no Client para evitar crash "Unhandled 'error' event"
 client.on("error", (error) => {
   console.error("⚠️ [Discord Client Error]:", error?.message || error);
 });
@@ -191,7 +179,7 @@ client.on("warn", (info) => {
   console.log("⚠️ [Discord Client Warning]:", info);
 });
 
-// Função para gerar Embed da Hierarquia
+// Função para gerar Embed da Hierarquia (CORRIGIDO NA LINHA 204)
 function generateHierarchyEmbed(db) {
   const config = db?.config || {};
   let totalMembers = 0;
@@ -199,10 +187,10 @@ function generateHierarchyEmbed(db) {
     db.hierarchy.forEach(rank => { totalMembers += (rank?.members?.length || 0); });
   }
 
+  // ✅ CORREÇÃO: Usando template strings com crase e \n em vez de aspas com quebra literal
   const embed = new EmbedBuilder()
     .setTitle("👑 HIERARQUIA OFICIAL DA FACÇÃO / GUILDA")
-    .setDescription("📋 **Total de Membros Registrados:** " + totalMembers + "
-⚡ *Atualizado em tempo real via Painel e Bot*")
+    .setDescription(`📋 **Total de Membros Registrados:** ${totalMembers}\n⚡ *Atualizado em tempo real via Painel e Bot*`)
     .setColor(0x5865F2);
 
   const bannerUrl = (config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg").trim();
@@ -237,19 +225,16 @@ function generateHierarchyEmbed(db) {
         let chunkIndex = 1;
 
         for (const line of lines) {
-          if ((currentChunk + line + "
-").length > 950) {
+          if ((currentChunk + line + "\n").length > 950) {
             embed.addFields({
               name: chunkIndex === 1 ? "📌 " + rankTitle + " (" + members.length + ")" : "📌 " + rankTitle + " (Cont. " + chunkIndex + ")",
               value: currentChunk.trim() || "*Nenhum integrante*",
               inline: false
             });
-            currentChunk = line + "
-";
+            currentChunk = line + "\n";
             chunkIndex++;
           } else {
-            currentChunk += line + "
-";
+            currentChunk += line + "\n";
           }
         }
 
@@ -283,7 +268,7 @@ async function updateEmbedInChannel(clientObj, db) {
         await oldMsg.edit({ embeds: [embed] });
         return;
       } catch (e) {
-        // Mensagem antiga não encontrada, cria uma nova abaixo
+        // Mensagem antiga não encontrada
       }
     }
 
@@ -301,7 +286,7 @@ function normalizeStr(str) {
   return str
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]/g, "");
 }
 
@@ -323,11 +308,11 @@ function rolesMatch(discordRoleName, hierarchyRankName) {
 function getTargetRoleIdForRank(rankName, config) {
   const norm = normalizeStr(rankName);
 
-  const envLider = (process.env.ROLE_LIDER_ID || config?.roleLiderId || "1527848364496912404").trim();
-  const envGerente = (process.env.ROLE_GERENTE_ID || config?.roleGerenteId || "1523277774436171796").trim();
-  const envElite = (process.env.ROLE_ELITE_ID || config?.roleEliteId || "1527812806873972838").trim();
-  const envMembros = (process.env.ROLE_MEMBROS_ID || config?.roleMembrosId || "1528075981078663259").trim();
-  const envRecruta = (process.env.ROLE_RECRUTA_ID || config?.roleRecrutaId || "1515125826780135485").trim();
+  const envLider = (process.env.ROLE_LIDER_ID || config?.roleLiderId || "").trim();
+  const envGerente = (process.env.ROLE_GERENTE_ID || config?.roleGerenteId || "").trim();
+  const envElite = (process.env.ROLE_ELITE_ID || config?.roleEliteId || "").trim();
+  const envMembros = (process.env.ROLE_MEMBROS_ID || config?.roleMembrosId || "").trim();
+  const envRecruta = (process.env.ROLE_RECRUTA_ID || config?.roleRecrutaId || "").trim();
 
   if (norm.includes("lider")) return envLider;
   if (norm.includes("gerente")) return envGerente;
@@ -353,23 +338,20 @@ async function syncDiscordRolesToHierarchy(clientObj, db) {
     }
 
     if (!guild) {
-      // Fallback: pega o primeiro servidor onde o bot está presente
       guild = clientObj.guilds.cache.first();
     }
 
     if (!guild) {
       console.log("⚠️ [Sincronização] Nenhum servidor Discord encontrado para o Bot.");
-      return { success: false, reason: "Nenhum servidor Discord encontrado. Verifique se o bot está no servidor." };
+      return { success: false, reason: "Nenhum servidor Discord encontrado." };
     }
 
     console.log(`🔄 [Sincronização] Conectado ao servidor: ${guild.name} (${guild.id})`);
 
-    // Tentar buscar todos os membros (requer SERVER MEMBERS INTENT)
     let membersCollection;
     try {
       membersCollection = await guild.members.fetch();
     } catch (e) {
-      console.log("⚠️ AVISO: Não foi possível buscar membros via fetch(). Usando cache.");
       membersCollection = guild.members.cache;
     }
 
@@ -386,7 +368,6 @@ async function syncDiscordRolesToHierarchy(clientObj, db) {
       const rankName = (group.rank || "").trim();
       if (!rankName) continue;
 
-      // Buscar cargo por ID configurado ou fallback por nome inteligente
       const targetRoleId = getTargetRoleIdForRank(rankName, db?.config);
       let matchedRole = null;
 
@@ -399,11 +380,8 @@ async function syncDiscordRolesToHierarchy(clientObj, db) {
       }
 
       if (!matchedRole) {
-        console.log(`ℹ️ [Sincronização] Nenhum cargo no Discord encontrado para "${rankName}".`);
         continue;
       }
-
-      console.log(`🎯 Cargo do banco "${rankName}" associado ao Cargo do Discord "${matchedRole.name}"`);
 
       const roleMembers = matchedRole.members.filter(m => !m.user.bot);
       const currentMap = new Map();
@@ -437,7 +415,7 @@ async function syncDiscordRolesToHierarchy(clientObj, db) {
     }
 
     saveDatabase(db);
-    console.log(`✅ [Sincronização] ${totalSynced} membros mapeados automaticamente no servidor ${guild.name}!`);
+    console.log(`✅ [Sincronização] ${totalSynced} membros mapeados no servidor ${guild.name}!`);
     return { success: true, count: totalSynced, guildName: guild.name };
   } catch (err) {
     console.error("⚠️ [Sincronização] Erro ao sincronizar cargos do Discord:", err.message || err);
@@ -469,7 +447,6 @@ const commands = [
     .addStringOption(opt => opt.setName("cargo").setDescription("Cargo (Lider, Gerente, Elite, membros, Recruta)").setRequired(true))
 ].map(cmd => cmd.toJSON());
 
-// Evento quando o bot estiver pronto (suporta Events.ClientReady)
 const clientReadyEvent = Events && Events.ClientReady ? Events.ClientReady : "clientReady";
 
 client.once(clientReadyEvent, async (readyClient) => {
@@ -501,12 +478,8 @@ client.once(clientReadyEvent, async (readyClient) => {
     } catch (err) {
       console.error("⚠️ Erro ao registrar comandos Slash:", err.message || err);
     }
-  } else {
-    console.log("ℹ️ Comandos Slash ignorados (TOKEN ou CLIENT_ID ausentes nas variáveis de ambiente).");
   }
 
-  // Auto-sincronização de cargos ao ligar o bot
-  console.log("⚡ Executando auto-sincronização dos cargos do Discord...");
   await syncDiscordRolesToHierarchy(readyClient || client, currentDb);
   await updateEmbedInChannel(readyClient || client, currentDb);
 });
@@ -535,9 +508,9 @@ client.on("interactionCreate", async interaction => {
       const res = await syncDiscordRolesToHierarchy(client, database);
       if (res.success) {
         await updateEmbedInChannel(client, database);
-        return interaction.editReply(`✅ **Sincronização Concluída!** ${res.count} membro(s) foram mapeados automaticamente dos cargos do Discord e a tabela foi atualizada no canal!`);
+        return interaction.editReply(`✅ **Sincronização Concluída!** ${res.count} membro(s) foram mapeados automaticamente dos cargos do Discord!`);
       } else {
-        return interaction.editReply(`⚠️ **Não foi possível sincronizar**: ${res.reason || res.error || "Erro de conexão"}.\n\n👉 **Dica**: Certifique-se de definir a variável **GUILD_ID** e de que a opção **SERVER MEMBERS INTENT** esteja ATIVADA no Discord Developer Portal (aba Bot).`);
+        return interaction.editReply(`⚠️ **Não foi possível sincronizar**: ${res.reason || res.error || "Erro de conexão"}.`);
       }
     } catch (err) {
       return interaction.editReply(`❌ Erro na sincronização: ${err.message}`);
@@ -550,12 +523,12 @@ client.on("interactionCreate", async interaction => {
     try {
       const channelId = (process.env.CHANNEL_ID || config.channelId || "").trim();
       if (!channelId) {
-        return interaction.editReply("❌ ID do canal da hierarquia não configurado. Defina CHANNEL_ID nas variáveis de ambiente.");
+        return interaction.editReply("❌ ID do canal da hierarquia não configurado.");
       }
 
       const channel = await client.channels.fetch(channelId).catch(() => null);
       if (!channel) {
-        return interaction.editReply("❌ Canal da hierarquia não encontrado. Verifique o CHANNEL_ID e se o bot tem permissão.");
+        return interaction.editReply("❌ Canal da hierarquia não encontrado.");
       }
 
       const embed = generateHierarchyEmbed(database);
@@ -574,7 +547,7 @@ client.on("interactionCreate", async interaction => {
       database.lastMessageId = newMsg.id;
       saveDatabase(database);
 
-      return interaction.editReply(`✅ Hierarquia enviada com sucesso no canal <#${channel.id}>!`);
+      return interaction.editReply(`✅ Hierarquia enviada no canal <#${channel.id}>!`);
     } catch (err) {
       return interaction.editReply(`❌ Erro ao enviar hierarquia: ${err.message}`);
     }
@@ -685,7 +658,6 @@ client.on("interactionCreate", async interaction => {
       return interaction.editReply(`❌ Cargo "${targetRankInput}" não encontrado. Cargos disponíveis: ${cargosDisponiveis}`);
     }
 
-    // Remover se já existir em algum cargo para evitar duplicidade
     database.hierarchy.forEach(r => {
       const idx = r.members.findIndex(m => m.id === targetUser.id || (m.discordTag && m.discordTag.includes(targetUser.username)));
       if (idx !== -1) r.members.splice(idx, 1);
@@ -714,8 +686,8 @@ const TOKEN = typeof rawToken === "string" ? rawToken.trim() : "";
 if (TOKEN && TOKEN !== "" && TOKEN !== "seu_token_aqui") {
   console.log("🔑 Tentando conectar ao Discord com o TOKEN fornecido...");
   client.login(TOKEN).catch((err) => {
-    console.error("❌ Falha no login do bot no Discord! Verifique o TOKEN nas variáveis de ambiente:", err.message || err);
+    console.error("❌ Falha no login do bot no Discord:", err.message || err);
   });
 } else {
-  console.error("❌ TOKEN do Bot não encontrado! Defina a variável de ambiente TOKEN no Railway/Replit/Local.");
+  console.error("❌ TOKEN do Bot não encontrado! Defina a variável de ambiente TOKEN.");
 }
