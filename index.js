@@ -1095,14 +1095,16 @@ if (tokenInicial) {
 
 /* VITE & EXPRESS LISTENER */
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(distPath, "index.html"));
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa"
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
