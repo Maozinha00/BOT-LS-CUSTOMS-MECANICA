@@ -536,16 +536,10 @@ client.on(Events.InteractionCreate || "interactionCreate", async (interaction) =
       db.hierarchy.forEach(h => { totalMembersAll += h.members.length; });
 
       await interaction.editReply(
-        "✅ **Leitura de Logs Concluída!**
-
-" +
-        "📊 **Total de Membros no Painel:** " + totalMembersAll + "
-" +
-        "📋 **Logs de Apelidos Aprovados Processados:** " + processedLogsCount + " (Canal <#" + logsChannelId + ">)
-" +
-        "👥 **Membros por Cargo Sincronizados:** " + countRolesSync + "
-
-" +
+        "✅ **Leitura de Logs Concluída!**\n\n" +
+        "📊 **Total de Membros no Painel:** " + totalMembersAll + "\n" +
+        "📋 **Logs de Apelidos Aprovados Processados:** " + processedLogsCount + " (Canal <#" + logsChannelId + ">)\n" +
+        "👥 **Membros por Cargo Sincronizados:** " + countRolesSync + "\n\n" +
         "*A mensagem fixa da hierarquia foi atualizada e organizada automaticamente!*"
       );
     } else if (commandName === "hierarquia") {
