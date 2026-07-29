@@ -136,6 +136,7 @@ client.on('interactionCreate', async interaction => {
 
       const embed = new EmbedBuilder()
         .setTitle('🔄 Sincronização de Apelidos Concluída')
+        .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
         .setColor(0x10B981)
         .setDescription(`**${updated}** apelidos foram atualizados no servidor.\n\n` + logs.join('\n').slice(0, 3900))
         .setTimestamp();
@@ -150,6 +151,7 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'hierarquia') {
     const embed = new EmbedBuilder()
       .setTitle('👑 Hierarquia e Organização dos Jogadores')
+      .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
       .setColor(0xF59E0B)
       .setDescription('Apelidos Oficiais formatados e organizados por Cargo:')
       .setTimestamp();
