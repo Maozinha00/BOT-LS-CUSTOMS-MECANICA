@@ -1,13 +1,22 @@
 {
   "name": "bot-hierarquia-hp",
+  "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "dev": "tsx server.ts",
+    "build": "esbuild server.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=index.js",
+    "start": "node index.js",
+    "clean": "rm -rf dist index.js",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "discord.js": "^14.27.0",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
   }
 }
