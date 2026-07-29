@@ -323,30 +323,44 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (commandName === 'hierarquia') {
-    const embed = new EmbedBuilder()
-      .setTitle('👑 Hierarquia e Organização dos Jogadores')
-      .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
-      .setColor(0xF59E0B)
-      .setDescription('Membros organizados por cargos oficiais do Discord:')
-      .setTimestamp();
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = `Hoje às ${timeStr}`;
 
-    const rolesOrder = ['Líder', 'Gerente', 'Elite', 'Membro', 'Recruta'];
-    rolesOrder.forEach(roleName => {
-      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === roleName);
+    const rolesData = [
+      { role: 'Líder', title: 'LÍDERES', icon: '👑' },
+      { role: 'Gerente', title: 'GERENTES', icon: '🛡️' },
+      { role: 'Elite', title: 'ELITE', icon: '⚡' },
+      { role: 'Membro', title: 'MEMBROS', icon: '⚔️' },
+      { role: 'Recruta', title: 'RECRUTAS', icon: '🔰' },
+    ];
+
+    let text = `╔══════════════════════════════════════╗\n`;
+    text += `           🐺👑 H U N T E R S 👑🐺\n`;
+    text += `        『 HIERARQUIA OFICIAL 』\n`;
+    text += `╚══════════════════════════════════════╝\n\n`;
+    text += `📅 Atualizado: ${dateStr}\n\n`;
+    text += `══════════════════════════════════════\n\n`;
+
+    rolesData.forEach(({ role, title, icon }) => {
+      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === role);
+      const countStr = String(rolePlayers.length).padStart(2, '0');
+
+      text += `${icon} ╭─ ${title} 「${countStr}」\n`;
       if (rolePlayers.length > 0) {
-        const icon = roleName === 'Líder' ? '👑' : roleName === 'Gerente' ? '🛡️' : roleName === 'Elite' ? '⚡' : roleName === 'Membro' ? '⚔️' : '🔰';
-        const listStr = rolePlayers
-          .map(p => `• \`|${p.role}| ${p.name} | ${p.id}\``)
-          .join('\n');
-        embed.addFields({
-          name: `${icon} ${roleName}s (${rolePlayers.length})`,
-          value: listStr,
-          inline: false,
+        rolePlayers.forEach(p => {
+          text += `┃ ➤ |${role}| ${p.name} | ${p.id}\n`;
         });
       }
+      text += `╰────────────────────────────\n\n`;
     });
 
-    await interaction.reply({ embeds: [embed] });
+    text += `╔══════════════════════════════════════╗\n`;
+    text += `        🐺 FAMÍLIA HUNTERS FIVEZ 🐺\n`;
+    text += `      「Honra • União • Disciplina」\n`;
+    text += `╚══════════════════════════════════════╝`;
+
+    await interaction.reply({ content: text });
   }
 });
 
