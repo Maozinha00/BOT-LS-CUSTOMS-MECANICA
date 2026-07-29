@@ -125,6 +125,11 @@ function loadDatabase() {
   const envEntryChannelId = (process.env.ENTRY_CHANNEL_ID || "").trim();
   const envLogsChannelId = (process.env.LOGS_CHANNEL_ID || "").trim();
   const envBannerUrl = (process.env.BANNER_URL || "").trim();
+  const envRoleLider = (process.env.ROLE_LIDER_ID || "").trim();
+  const envRoleGerente = (process.env.ROLE_GERENTE_ID || "").trim();
+  const envRoleElite = (process.env.ROLE_ELITE_ID || "").trim();
+  const envRoleMembros = (process.env.ROLE_MEMBROS_ID || "").trim();
+  const envRoleRecruta = (process.env.ROLE_RECRUTA_ID || "").trim();
 
   if (envToken) data.config.token = envToken;
   if (envClientId) data.config.clientId = envClientId;
@@ -133,12 +138,22 @@ function loadDatabase() {
   if (envEntryChannelId) data.config.entryChannelId = envEntryChannelId;
   if (envLogsChannelId) data.config.logsChannelId = envLogsChannelId;
   if (envBannerUrl) data.config.bannerUrl = envBannerUrl;
+  if (envRoleLider) data.config.roleLiderId = envRoleLider;
+  if (envRoleGerente) data.config.roleGerenteId = envRoleGerente;
+  if (envRoleElite) data.config.roleEliteId = envRoleElite;
+  if (envRoleMembros) data.config.roleMembrosId = envRoleMembros;
+  if (envRoleRecruta) data.config.roleRecrutaId = envRoleRecruta;
 
   // Fallbacks de padrão se ainda estiverem vazios
   if (!data.config.channelId) data.config.channelId = "1527817862532694026";
   if (!data.config.entryChannelId) data.config.entryChannelId = "1524222632923496509";
   if (!data.config.logsChannelId) data.config.logsChannelId = "1515448473246498866";
   if (!data.config.bannerUrl) data.config.bannerUrl = "https://i.imgur.com/pf92vzV.jpeg";
+  if (!data.config.roleLiderId) data.config.roleLiderId = "1527848364496912404";
+  if (!data.config.roleGerenteId) data.config.roleGerenteId = "1523277774436171796";
+  if (!data.config.roleEliteId) data.config.roleEliteId = "1527812806873972838";
+  if (!data.config.roleMembrosId) data.config.roleMembrosId = "1528075981078663259";
+  if (!data.config.roleRecrutaId) data.config.roleRecrutaId = "1515125826780135485";
 
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
@@ -243,11 +258,164 @@ async function updateEmbedInChannel(clientObj, db) {
   }
 }
 
+// Auxiliares para normalização e comparação de nomes de cargos
+function normalizeStr(str) {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function rolesMatch(discordRoleName, hierarchyRankName) {
+  const normRole = normalizeStr(discordRoleName);
+  const normRank = normalizeStr(hierarchyRankName);
+
+  if (!normRole || !normRank) return false;
+  if (normRole === normRank) return true;
+  if (normRole.includes(normRank) || normRank.includes(normRole)) return true;
+
+  const rSingular = normRole.endsWith("s") ? normRole.slice(0, -1) : normRole;
+  const kSingular = normRank.endsWith("s") ? normRank.slice(0, -1) : normRank;
+  if (rSingular && kSingular && rSingular === kSingular) return true;
+
+  return false;
+}
+
+function getTargetRoleIdForRank(rankName, config) {
+  const norm = normalizeStr(rankName);
+
+  const envLider = (process.env.ROLE_LIDER_ID || config?.roleLiderId || "1527848364496912404").trim();
+  const envGerente = (process.env.ROLE_GERENTE_ID || config?.roleGerenteId || "1523277774436171796").trim();
+  const envElite = (process.env.ROLE_ELITE_ID || config?.roleEliteId || "1527812806873972838").trim();
+  const envMembros = (process.env.ROLE_MEMBROS_ID || config?.roleMembrosId || "1528075981078663259").trim();
+  const envRecruta = (process.env.ROLE_RECRUTA_ID || config?.roleRecrutaId || "1515125826780135485").trim();
+
+  if (norm.includes("lider")) return envLider;
+  if (norm.includes("gerente")) return envGerente;
+  if (norm.includes("elite")) return envElite;
+  if (norm.includes("membro")) return envMembros;
+  if (norm.includes("recruta")) return envRecruta;
+
+  return "";
+}
+
+// Função para sincronizar automaticamente membros dos cargos do Discord com a hierarquia
+async function syncDiscordRolesToHierarchy(clientObj, db) {
+  try {
+    if (!clientObj || !clientObj.guilds) {
+      return { success: false, reason: "Bot não conectado ao Discord." };
+    }
+
+    const guildId = (process.env.GUILD_ID || db?.config?.guildId || "").trim();
+    let guild = null;
+
+    if (guildId) {
+      guild = await clientObj.guilds.fetch(guildId).catch(() => null);
+    }
+
+    if (!guild) {
+      // Fallback: pega o primeiro servidor onde o bot está presente
+      guild = clientObj.guilds.cache.first();
+    }
+
+    if (!guild) {
+      console.log("⚠️ [Sincronização] Nenhum servidor Discord encontrado para o Bot.");
+      return { success: false, reason: "Nenhum servidor Discord encontrado. Verifique se o bot está no servidor." };
+    }
+
+    console.log(`🔄 [Sincronização] Conectado ao servidor: ${guild.name} (${guild.id})`);
+
+    // Tentar buscar todos os membros (requer SERVER MEMBERS INTENT)
+    let membersCollection;
+    try {
+      membersCollection = await guild.members.fetch();
+    } catch (e) {
+      console.log("⚠️ AVISO: Não foi possível buscar membros via fetch(). Usando cache.");
+      membersCollection = guild.members.cache;
+    }
+
+    const roles = await guild.roles.fetch();
+
+    if (!Array.isArray(db.hierarchy) || db.hierarchy.length === 0) {
+      return { success: false, reason: "Hierarquia vazia no banco de dados." };
+    }
+
+    let totalSynced = 0;
+    const assignedMemberIds = new Set();
+
+    for (const group of db.hierarchy) {
+      const rankName = (group.rank || "").trim();
+      if (!rankName) continue;
+
+      // Buscar cargo por ID configurado ou fallback por nome inteligente
+      const targetRoleId = getTargetRoleIdForRank(rankName, db?.config);
+      let matchedRole = null;
+
+      if (targetRoleId) {
+        matchedRole = roles.get(targetRoleId) || roles.find(r => r.id === targetRoleId);
+      }
+
+      if (!matchedRole) {
+        matchedRole = roles.find(r => rolesMatch(r.name, rankName));
+      }
+
+      if (!matchedRole) {
+        console.log(`ℹ️ [Sincronização] Nenhum cargo no Discord encontrado para "${rankName}".`);
+        continue;
+      }
+
+      console.log(`🎯 Cargo do banco "${rankName}" associado ao Cargo do Discord "${matchedRole.name}"`);
+
+      const roleMembers = matchedRole.members.filter(m => !m.user.bot);
+      const currentMap = new Map();
+      (group.members || []).forEach(m => {
+        if (m.id) currentMap.set(m.id, m);
+      });
+
+      const updatedMembersList = [];
+
+      roleMembers.forEach(member => {
+        if (assignedMemberIds.has(member.id)) return;
+
+        const memberId = member.id;
+        const displayName = member.nickname || member.user.globalName || member.user.username;
+        const discordTag = `@${member.user.username}`;
+        const existingData = currentMap.get(memberId);
+
+        updatedMembersList.push({
+          id: memberId,
+          discordTag: discordTag,
+          gameNick: existingData?.gameNick || displayName,
+          joinDate: existingData?.joinDate || new Date().toISOString().split("T")[0],
+          notes: existingData?.notes || `Sincronizado do Cargo ${matchedRole.name}`
+        });
+
+        assignedMemberIds.add(memberId);
+        totalSynced++;
+      });
+
+      group.members = updatedMembersList;
+    }
+
+    saveDatabase(db);
+    console.log(`✅ [Sincronização] ${totalSynced} membros mapeados automaticamente no servidor ${guild.name}!`);
+    return { success: true, count: totalSynced, guildName: guild.name };
+  } catch (err) {
+    console.error("⚠️ [Sincronização] Erro ao sincronizar cargos do Discord:", err.message || err);
+    return { success: false, error: err.message };
+  }
+}
+
 // Registrar Comandos Slash
 const commands = [
   new SlashCommandBuilder()
     .setName("hierarquia")
     .setDescription("Exibe ou atualiza a mensagem fixa da hierarquia no canal configurado."),
+  new SlashCommandBuilder()
+    .setName("sincronizar")
+    .setDescription("Puxa cada pessoa do servidor com o cargo correspondente e adiciona na hierarquia."),
   new SlashCommandBuilder()
     .setName("promover")
     .setDescription("Promove um membro para o próximo cargo na hierarquia.")
@@ -299,6 +467,21 @@ client.once(clientReadyEvent, async (readyClient) => {
   } else {
     console.log("ℹ️ Comandos Slash ignorados (TOKEN ou CLIENT_ID ausentes nas variáveis de ambiente).");
   }
+
+  // Auto-sincronização de cargos ao ligar o bot
+  console.log("⚡ Executando auto-sincronização dos cargos do Discord...");
+  await syncDiscordRolesToHierarchy(readyClient || client, currentDb);
+  await updateEmbedInChannel(readyClient || client, currentDb);
+});
+
+// Atualiza hierarquia automaticamente quando cargos de membros forem alterados no Discord
+client.on("guildMemberUpdate", async (oldMember, newMember) => {
+  if (oldMember.roles.cache.size !== newMember.roles.cache.size) {
+    console.log(`🔄 Mudança de cargo detectada para ${newMember.user.tag}. Atualizando hierarquia...`);
+    const db = loadDatabase();
+    await syncDiscordRolesToHierarchy(client, db);
+    await updateEmbedInChannel(client, db);
+  }
 });
 
 // Tratamento de Interações de Comandos
@@ -308,6 +491,21 @@ client.on("interactionCreate", async interaction => {
   const { commandName } = interaction;
   database = loadDatabase();
   const config = database?.config || {};
+
+  if (commandName === "sincronizar") {
+    await interaction.deferReply();
+    try {
+      const res = await syncDiscordRolesToHierarchy(client, database);
+      if (res.success) {
+        await updateEmbedInChannel(client, database);
+        return interaction.editReply(`✅ **Sincronização Concluída!** ${res.count} membro(s) foram mapeados automaticamente dos cargos do Discord e a tabela foi atualizada no canal!`);
+      } else {
+        return interaction.editReply(`⚠️ **Não foi possível sincronizar**: ${res.reason || res.error || "Erro de conexão"}.\n\n👉 **Dica**: Certifique-se de definir a variável **GUILD_ID** e de que a opção **SERVER MEMBERS INTENT** esteja ATIVADA no Discord Developer Portal (aba Bot).`);
+      }
+    } catch (err) {
+      return interaction.editReply(`❌ Erro na sincronização: ${err.message}`);
+    }
+  }
 
   if (commandName === "hierarquia") {
     await interaction.deferReply({ ephemeral: true });
