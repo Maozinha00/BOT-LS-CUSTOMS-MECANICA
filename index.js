@@ -2,7 +2,6 @@ import "dotenv/config";
 import express from "express";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import {
   Client,
@@ -14,7 +13,7 @@ import {
   TextChannel
 } from "discord.js";
 
-const currentDir = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const currentDir = typeof __dirname !== "undefined" ? __dirname : process.cwd();
 const PORT = process.env.PORT || 3000;
 
 export type CargoKey = "Lider" | "Gerente" | "Elite" | "membros" | "Recruta";
@@ -191,17 +190,17 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
   // 1. Remover menções do Discord
   temp = temp.replace(/<@!?\d{17,20}>/g, "").replace(/^@+/g, "");
 
-  // 2. Remover handles/tags entre parênteses
+  // 2. Remover handles/tags entre parênteses no final
   temp = temp.replace(/\([a-zA-Z0-9._-]{2,32}\)$/g, "").trim();
 
-  // 3. Remover tags anteriores
+  // 3. Remover tags anteriores entre barras/colchetes
   let prevTemp = "";
   while (temp !== prevTemp) {
     prevTemp = temp;
     temp = temp.replace(/^[|\[(]\s*[^|\])]+\s*[|\])]\s*/g, "").trim();
   }
 
-  // 4. Remover tags de cargo padrão e emojis
+  // 4. Remover tags de cargo e emojis
   const tagsRegex = [
     /\|\s*(lider|líder|gerente|elite|membro|membros|recruta)\s*\|\s*/gi,
     /\[\s*(lider|líder|gerente|elite|membros|membro|recruta)\s*\]\s*/gi,
