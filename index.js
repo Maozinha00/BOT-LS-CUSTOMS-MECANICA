@@ -3,8 +3,8 @@
  * Requisitos: Node.js v18+ e discord.js v14
  * 
  * Instruções de instalação local / VPS:
- * 1. crie uma pasta no seu PC e execute: npm init -y
- * 2. instale as dependências: npm install discord.js dotenv
+ * 1. Crie uma pasta no seu PC e execute: npm init -y
+ * 2. Instale as dependências: npm install discord.js dotenv
  * 3. Crie um arquivo .env com:
  *    DISCORD_TOKEN=seu_token_aqui
  *    GUILD_ID=seu_guild_id_aqui
@@ -54,7 +54,7 @@ const FACTION_PLAYERS = [
 client.once('ready', async () => {
   console.log(`✅ Bot rodando com sucesso como: ${client.user.tag}`);
   
-  // Registrar Comando /sincronizar
+  // Registrar Comandos Slash /sincronizar e /hierarquia
   const commands = [
     new SlashCommandBuilder()
       .setName('sincronizar')
@@ -86,61 +86,89 @@ client.on('interactionCreate', async interaction => {
   if (commandName === 'sincronizar') {
     await interaction.deferReply({ ephemeral: true });
     
-    const guild = interaction.guild;
-    const members = await guild.members.fetch();
-    let updated = 0;
-    let logs = [];
+    try {
+      const guild = interaction.guild;
+      const members = await guild.members.fetch();
+      let updated = 0;
+      let logs = [];
 
-    for (const p of FACTION_PLAYERS) {
-      const targetNick = `|${p.role}| ${p.name} | ${p.id}`;
-      
-      // Procura membro que tenha o ID do jogo no nome
-      const member = members.find(m => {
-        const nameStr = `${m.nickname || ''} ${m.user.globalName || ''} ${m.user.username}`;
-        return nameStr.includes(p.id);
-      });
+      for (const p of FACTION_PLAYERS) {
+        const targetNick = `|${p.role}| ${p.name} | ${p.id}`;
+        
+        // Procura membro pelo ID exato usando limite de palavra \b
+        const idRegex = new RegExp(`\\b${p.id}\\b`);
+        const member = members.find(m => {
+          const nameStr = `${m.nickname || ''} ${m.user.globalName || ''} ${m.user.username}`;
+          return idRegex.test(nameStr);
+        });
 
-      if (member) {
-        if (member.nickname !== targetNick) {
-          try {
-            await member.setNickname(targetNick);
-            updated++;
-            logs.push(`✅ **ID ${p.id}**: Alterado para \`${targetNick}\``);
-          } catch (err) {
-            logs.push(`❌ **ID ${p.id}**: Sem permissão para alterar \`${member.user.tag}\` (cargo do bot é inferior?)`);
+        if (member) {
+          if (member.nickname !== targetNick) {
+            try {
+              await member.setNickname(targetNick);
+              updated++;
+              logs.push(`✅ **ID ${p.id}**: Alterado para \`${targetNick}\``);
+            } catch (err) {
+              if (err.code === 50013) {
+                logs.push(`❌ **ID ${p.id}**: Sem permissão (Dono do Servidor ou Cargo superior ao Bot).`);
+              } else {
+                logs.push(`❌ **ID ${p.id}**: Erro ao alterar \`${member.user.tag}\`.`);
+              }
+            }
+          } else {
+            logs.push(`ℹ️ **ID ${p.id}**: Apelido já estava correto.`);
           }
         } else {
-          logs.push(`ℹ️ **ID ${p.id}**: Apelido já estava correto.`);
+          logs.push(`⚠️ **ID ${p.id}**: Membro não encontrado no Discord.`);
         }
-      } else {
-        logs.push(`⚠️ **ID ${p.id}**: Membro não encontrado no Discord.`);
       }
+
+      const embed = new EmbedBuilder()
+        .setTitle('🔄 Sincronização de Apelidos Concluída')
+        .setColor(0x10B981)
+        .setDescription(`**${updated}** apelidos foram atualizados no servidor.\n\n` + logs.join('\n').slice(0, 3900))
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error('Erro na sincronização:', error);
+      await interaction.editReply({ content: '❌ Ocorreu um erro ao sincronizar os membros.' });
     }
-
-    const embed = new EmbedBuilder()
-      .setTitle('🔄 Sincronização de Apelidos Concluída')
-      .setColor(0x10B981)
-      .setDescription(`**${updated}** apelidos foram atualizados no servidor.\n\n` + logs.join('\n').slice(0, 3900));
-
-    await interaction.editReply({ embeds: [embed] });
   }
 
   if (commandName === 'hierarquia') {
     const embed = new EmbedBuilder()
       .setTitle('👑 Hierarquia e Organização dos Jogadores')
       .setColor(0xF59E0B)
-      .setDescription('Apelidos Oficiais formatados com ID:');
+      .setDescription('Apelidos Oficiais formatados e organizados por Cargo:')
+      .setTimestamp();
 
-    FACTION_PLAYERS.forEach(p => {
-      embed.addFields({
-        name: `|${p.role}| ${p.name}`,
-        value: `ID: \`${p.id}\` | Apelido: \`|${p.role}| ${p.name} | ${p.id}\``,
-        inline: false,
-      });
+    const roles = ['Líder', 'Gerente', 'Membro', 'Recruta'];
+    roles.forEach(roleName => {
+      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === roleName);
+      if (rolePlayers.length > 0) {
+        const listStr = rolePlayers
+          .map(p => `• \`|${p.role}| ${p.name} | ${p.id}\``)
+          .join('\n');
+        embed.addFields({
+          name: `${roleName === 'Líder' ? '👑' : roleName === 'Gerente' ? '🛡️' : roleName === 'Membro' ? '⚔️' : '🔰'} ${roleName}s (${rolePlayers.length})`,
+          value: listStr,
+          inline: false,
+        });
+      }
     });
 
     await interaction.reply({ embeds: [embed] });
   }
+});
+
+// Tratamento de erros globais para estabilidade 100%
+process.on('unhandledRejection', error => {
+  console.error('⚠️ Erro de Rejeição não tratada:', error);
+});
+
+process.on('uncaughtException', error => {
+  console.error('⚠️ Exceção não capturada:', error);
 });
 
 client.login(process.env.DISCORD_TOKEN);
