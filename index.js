@@ -1,31 +1,38 @@
 /**
- * Bot de Sincronização de Apelidos & Hierarquia no Discord
+ * Bot de Sincronização Automática por Cargos e Hierarquia da Facção
  * Requisitos: Node.js v18+ e discord.js v14
  * 
- * Instruções de instalação local / VPS:
- * 1. crie uma pasta no seu PC e execute: npm init -y
- * 2. instale as dependências: npm install discord.js dotenv
- * 3. Crie um arquivo .env com:
- *    DISCORD_TOKEN=seu_token_aqui
- *    GUILD_ID=seu_guild_id_aqui
- * 4. Execute: node bot.js
+ * Mapeamento de Cargos e IDs do Discord:
+ * • Líder:   1527848364496912404
+ * • Gerente: 1523277774436171796
+ * • Elite:   1527812806873972838
+ * • Membro:  1528075981078663259
+ * • Recruta: 1515125826780135485
+ * • Logs:    1515448473246498866
  */
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 
-// Carregamento seguro do dotenv (evita crash se o dotenv não estiver instalado)
 try {
   require('dotenv').config();
 } catch (err) {
-  console.log('ℹ️ pacote dotenv não instalado. Usando variáveis do sistema de ambiente.');
+  console.log('ℹ️ Pacote dotenv não instalado. Usando variáveis de ambiente do sistema.');
 }
 
 if (!process.env.DISCORD_TOKEN) {
   console.error('❌ ERRO CRÍTICO: DISCORD_TOKEN não foi encontrado nas variáveis de ambiente!');
-  console.error('Certifique-se de executar "npm install dotenv" e ter um arquivo .env configurado.');
 }
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1515448473246498866';
+
+// Mapeamento de Cargos por ID no Discord
+const FACTION_ROLES = {
+  '1527848364496912404': { role: 'Líder', priority: 1, icon: '👑' },
+  '1523277774436171796': { role: 'Gerente', priority: 2, icon: '🛡️' },
+  '1527812806873972838': { role: 'Elite', priority: 3, icon: '⚡' },
+  '1528075981078663259': { role: 'Membro', priority: 4, icon: '⚔️' },
+  '1515125826780135485': { role: 'Recruta', priority: 5, icon: '🔰' },
+};
 
 const client = new Client({
   intents: [
@@ -79,23 +86,103 @@ async function sendLogEmbed(guild, title, description, color = 0x10B981, fields 
       await channel.send({ embeds: [embed] });
     }
   } catch (err) {
-    console.error('⚠️ Não foi possível enviar log para o canal 1515448473246498866:', err.message);
+    console.error('⚠️ Não foi possível enviar log para o canal de logs:', err.message);
+  }
+}
+
+// Identifica o maior cargo de facção do membro por ID do cargo
+function getMemberFactionRole(member) {
+  let highest = null;
+  for (const [roleId, info] of Object.entries(FACTION_ROLES)) {
+    if (member.roles.cache.has(roleId)) {
+      if (!highest || info.priority < highest.priority) {
+        highest = { roleId, ...info };
+      }
+    }
+  }
+  return highest;
+}
+
+// Lógica de sincronização individual de cada membro por cargos
+async function syncMemberByRoles(member) {
+  if (!member || member.user.bot) return null;
+
+  const factionRole = getMemberFactionRole(member);
+  const currentName = member.nickname || member.user.globalName || member.user.username;
+  const matchId = currentName.match(/\b(\d{3,6})\b/) || member.user.username.match(/\b(\d{3,6})\b/);
+  const playerId = matchId ? matchId[1] : member.user.id.slice(-5);
+
+  let cleanName = currentName
+    .replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|/gi, '')
+    .replace(/\b\d{3,6}\b/g, '')
+    .replace(/[-|]/g, ' ')
+    .trim();
+  if (!cleanName) cleanName = member.user.username;
+
+  // 1. MEMBRO POSSUI CARGO DE FACÇÃO
+  if (factionRole) {
+    const targetNick = `|${factionRole.role}| ${cleanName} | ${playerId}`;
+
+    if (member.nickname !== targetNick) {
+      try {
+        await member.setNickname(targetNick);
+      } catch (err) {
+        console.error(`⚠️ Erro ao definir apelido de ${member.user.tag}:`, err.message);
+      }
+    }
+
+    // Atualiza ou insere na hierarquia do painel
+    const idx = FACTION_PLAYERS.findIndex(p => p.id === playerId || p.name.toLowerCase() === cleanName.toLowerCase());
+    let isNew = false;
+    let oldRole = null;
+
+    if (idx >= 0) {
+      oldRole = FACTION_PLAYERS[idx].role;
+      FACTION_PLAYERS[idx].role = factionRole.role;
+      FACTION_PLAYERS[idx].name = cleanName;
+    } else {
+      FACTION_PLAYERS.push({ id: playerId, name: cleanName, role: factionRole.role });
+      isNew = true;
+    }
+
+    return { status: 'synced', roleInfo: factionRole, cleanName, playerId, targetNick, isNew, oldRole };
+  } 
+  // 2. MEMBRO NÃO POSSUI NENHUM CARGO DE FACÇÃO (Remover tag e tirar da hierarquia)
+  else {
+    let tagRemoved = false;
+    if (/\|(Líder|Gerente|Elite|Membro|Recruta)\|/i.test(currentName)) {
+      const cleanNick = currentName.replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|\s*/gi, '').trim();
+      try {
+        await member.setNickname(cleanNick.length > 0 ? cleanNick : null);
+        tagRemoved = true;
+      } catch (err) {
+        console.error(`Erro ao limpar tag de ${member.user.tag}:`, err.message);
+      }
+    }
+
+    const idx = FACTION_PLAYERS.findIndex(p => p.id === playerId);
+    let removedPlayer = null;
+    if (idx >= 0) {
+      removedPlayer = FACTION_PLAYERS.splice(idx, 1)[0];
+    }
+
+    return { status: 'removed', removedPlayer, tagRemoved, cleanName, playerId };
   }
 }
 
 client.once('ready', async () => {
   console.log(`✅ Bot rodando com sucesso como: ${client.user.tag}`);
-  console.log(`📢 Canal de logs atrelado: ${LOG_CHANNEL_ID}`);
-  
-  // Registrar Comando /sincronizar
+  console.log(`📢 Canal de logs ativo: ${LOG_CHANNEL_ID}`);
+
+  // Registrar Comandos Slash no Discord
   const commands = [
     new SlashCommandBuilder()
       .setName('sincronizar')
-      .setDescription('Arruma os apelidos de todos os membros do Discord pelo ID')
+      .setDescription('Sincroniza automaticamente todos os membros pelos IDs de Cargo')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageNicknames),
     new SlashCommandBuilder()
       .setName('hierarquia')
-      .setDescription('Mostra a lista completa da hierarquia e cargos'),
+      .setDescription('Exibe a hierarquia completa formatada por cargos'),
   ];
 
   const rest = new REST().setToken(process.env.DISCORD_TOKEN);
@@ -109,101 +196,65 @@ client.once('ready', async () => {
   } catch (err) {
     console.error('❌ Erro ao registrar comandos:', err);
   }
+
+  // AUTO-SINCRONIZAÇÃO AUTOMÁTICA EM SEGUNDO PLANO
+  const autoSyncProcess = async () => {
+    try {
+      const guild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
+      if (!guild) return;
+      const members = await guild.members.fetch();
+      let syncedCount = 0;
+
+      for (const [_, member] of members) {
+        const res = await syncMemberByRoles(member);
+        if (res && res.status === 'synced') syncedCount++;
+      }
+      console.log(`🔄 Auto-Sincronização por cargos concluída: ${syncedCount} membros alinhados.`);
+    } catch (err) {
+      console.error('Erro na Auto-Sincronização:', err.message);
+    }
+  };
+
+  await autoSyncProcess();
+  setInterval(autoSyncProcess, 10 * 60 * 1000); // Executa a cada 10 minutos
 });
 
-// EVENTO AUTOMÁTICO: Quando um membro ganha ou perde o cargo de Recruta
+// EVENTO AUTOMÁTICO: Atualização de cargos do membro em tempo real
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
-  const hadRole = oldMember.roles.cache.some(r => r.name.toLowerCase().includes('recruta'));
-  const hasRole = newMember.roles.cache.some(r => r.name.toLowerCase().includes('recruta'));
+  const oldRoleInfo = getMemberFactionRole(oldMember);
+  const newRoleInfo = getMemberFactionRole(newMember);
 
-  // 1. MEMBRO APROVADO COMO RECRUTA -> Coloca a tag |Recruta| e adiciona à hierarquia
-  if (!hadRole && hasRole) {
-    console.log(`🟢 Membro ${newMember.user.tag} aprovado como Recruta.`);
-    
-    const currentName = newMember.nickname || newMember.user.globalName || newMember.user.username;
-    const matchId = currentName.match(/\b(\d{3,6})\b/) || newMember.user.username.match(/\b(\d{3,6})\b/);
-    const playerId = matchId ? matchId[1] : newMember.user.id.slice(-5);
-    
-    let cleanName = currentName
-      .replace(/\|(Líder|Gerente|Membro|Recruta)\|/gi, '')
-      .replace(/\b\d{3,6}\b/g, '')
-      .replace(/[-|]/g, ' ')
-      .trim();
-    if (!cleanName) cleanName = newMember.user.username;
+  if (oldRoleInfo?.roleId !== newRoleInfo?.roleId) {
+    console.log(`⚡ Cargo alterado para ${newMember.user.tag}: ${oldRoleInfo?.role || 'Nenhum'} -> ${newRoleInfo?.role || 'Nenhum'}`);
+    const res = await syncMemberByRoles(newMember);
 
-    const formattedNick = `|Recruta| ${cleanName} | ${playerId}`;
-
-    try {
-      if (newMember.nickname !== formattedNick) {
-        await newMember.setNickname(formattedNick);
-      }
-    } catch (err) {
-      console.error(`Não foi possível alterar apelido de ${newMember.user.tag}:`, err.message);
+    if (res && res.status === 'synced') {
+      await sendLogEmbed(
+        newMember.guild,
+        `👑 Cargo Sincronizado: ${res.roleInfo.role}`,
+        `O membro <@${newMember.user.id}> teve o cargo **${res.roleInfo.role}** ativado e foi atualizado no painel de hierarquia!`,
+        0x10B981,
+        [
+          { name: '👤 Jogador', value: res.cleanName, inline: true },
+          { name: '🪪 ID do Jogo', value: `\`${res.playerId}\``, inline: true },
+          { name: '🏷️ Apelido Discord', value: `\`${res.targetNick}\``, inline: false },
+          { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
+        ]
+      );
+    } else if (res && res.status === 'removed' && (res.removedPlayer || res.tagRemoved)) {
+      await sendLogEmbed(
+        newMember.guild,
+        '⚠️ Cargo de Facção Removido',
+        `O membro <@${newMember.user.id}> teve seus cargos de facção removidos. A tag foi limpa e o jogador foi retirado da hierarquia.`,
+        0xEF4444,
+        [
+          { name: '👤 Jogador', value: res.cleanName, inline: true },
+          { name: '🪪 ID do Jogo', value: `\`${res.playerId}\``, inline: true },
+          { name: '🏷️ Status', value: 'Tag Removida e Excluído do Painel', inline: false },
+          { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
+        ]
+      );
     }
-
-    // Adiciona na hierarquia de jogadores
-    const existingIndex = FACTION_PLAYERS.findIndex(p => p.id === playerId || p.name.toLowerCase() === cleanName.toLowerCase());
-    if (existingIndex >= 0) {
-      FACTION_PLAYERS[existingIndex].role = 'Recruta';
-      FACTION_PLAYERS[existingIndex].name = cleanName;
-    } else {
-      FACTION_PLAYERS.push({ id: playerId, name: cleanName, role: 'Recruta' });
-    }
-
-    // Envia Log para o Canal 1515448473246498866
-    await sendLogEmbed(
-      newMember.guild,
-      '🔰 Novo Recruta Aprovado & Adicionado à Hierarquia',
-      `O membro <@${newMember.user.id}> foi aprovado com o cargo **Recruta** e inserido automaticamente na hierarquia!`,
-      0x10B981,
-      [
-        { name: '👤 Jogador', value: cleanName, inline: true },
-        { name: '🪪 ID do Jogo', value: `\`${playerId}\``, inline: true },
-        { name: '🏷️ Apelido Aplicado', value: `\`${formattedNick}\``, inline: false },
-        { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
-      ]
-    );
-  }
-
-  // 2. CARGO RECRUTA REMOVIDO -> Tira a tag |Recruta| e remove da hierarquia
-  if (hadRole && !hasRole) {
-    console.log(`🔴 Cargo Recruta removido de ${newMember.user.tag}.`);
-
-    const currentName = newMember.nickname || newMember.user.globalName || newMember.user.username;
-    const matchId = currentName.match(/\b(\d{3,6})\b/);
-    const playerId = matchId ? matchId[1] : null;
-
-    let newNick = currentName.replace(/\|Recruta\|\s*/gi, '').trim();
-    try {
-      if (newMember.nickname && newMember.nickname !== newNick) {
-        await newMember.setNickname(newNick.length > 0 ? newNick : null);
-      }
-    } catch (err) {
-      console.error(`Erro ao remover apelido recruta:`, err.message);
-    }
-
-    // Remove da hierarquia
-    let removedPlayer = null;
-    if (playerId) {
-      const idx = FACTION_PLAYERS.findIndex(p => p.id === playerId);
-      if (idx >= 0) {
-        removedPlayer = FACTION_PLAYERS.splice(idx, 1)[0];
-      }
-    }
-
-    // Envia Log para o Canal 1515448473246498866
-    await sendLogEmbed(
-      newMember.guild,
-      '⚠️ Cargo Recruta Removido & Retirado da Hierarquia',
-      `O cargo **Recruta** foi removido de <@${newMember.user.id}>. A tag foi removida e o jogador foi excluído da hierarquia.`,
-      0xEF4444,
-      [
-        { name: '👤 Jogador', value: removedPlayer ? removedPlayer.name : newMember.user.username, inline: true },
-        { name: '🪪 ID do Jogo', value: playerId ? `\`${playerId}\`` : 'N/A', inline: true },
-        { name: '🏷️ Status', value: 'Tag |Recruta| Removida do Discord e Excluído do Painel', inline: false },
-        { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
-      ]
-    );
   }
 });
 
@@ -242,54 +293,31 @@ client.on('interactionCreate', async interaction => {
 
   if (commandName === 'sincronizar') {
     await interaction.deferReply({ ephemeral: true });
-    
+
     try {
       const guild = interaction.guild;
       const members = await guild.members.fetch();
-      let updated = 0;
+      let synced = 0;
       let logs = [];
 
-      for (const p of FACTION_PLAYERS) {
-        const targetNick = `|${p.role}| ${p.name} | ${p.id}`;
-        
-        // Procura membro pelo ID exato usando limite de palavra \b
-        const idRegex = new RegExp(`\\b${p.id}\\b`);
-        const member = members.find(m => {
-          const nameStr = `${m.nickname || ''} ${m.user.globalName || ''} ${m.user.username}`;
-          return idRegex.test(nameStr);
-        });
-
-        if (member) {
-          if (member.nickname !== targetNick) {
-            try {
-              await member.setNickname(targetNick);
-              updated++;
-              logs.push(`✅ **ID ${p.id}**: Alterado para \`${targetNick}\``);
-            } catch (err) {
-              if (err.code === 50013) {
-                logs.push(`❌ **ID ${p.id}**: Sem permissão (Dono do Servidor ou Cargo superior ao Bot).`);
-              } else {
-                logs.push(`❌ **ID ${p.id}**: Erro ao alterar \`${member.user.tag}\`.`);
-              }
-            }
-          } else {
-            logs.push(`ℹ️ **ID ${p.id}**: Apelido já estava correto.`);
-          }
-        } else {
-          logs.push(`⚠️ **ID ${p.id}**: Membro não encontrado no Discord.`);
+      for (const [_, member] of members) {
+        const res = await syncMemberByRoles(member);
+        if (res && res.status === 'synced') {
+          synced++;
+          logs.push(`✅ **${res.cleanName}** (`ID: ${res.playerId}`): Cargo **${res.roleInfo.role}**`);
         }
       }
 
       const embed = new EmbedBuilder()
-        .setTitle('🔄 Sincronização de Apelidos Concluída')
+        .setTitle('🔄 Sincronização por Cargos Concluída')
         .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
         .setColor(0x10B981)
-        .setDescription(`**${updated}** apelidos foram atualizados no servidor.\n\n` + logs.join('\n').slice(0, 3900))
+        .setDescription(`**${synced}** membros foram sincronizados automaticamente com base em seus cargos no Discord.\n\n` + (logs.join('\n').slice(0, 3800) || 'Todos os membros já estavam sincronizados.'))
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
-      console.error('Erro na sincronização:', error);
+    } catch (err) {
+      console.error('Erro no comando /sincronizar:', err);
       await interaction.editReply({ content: '❌ Ocorreu um erro ao sincronizar os membros.' });
     }
   }
@@ -299,18 +327,19 @@ client.on('interactionCreate', async interaction => {
       .setTitle('👑 Hierarquia e Organização dos Jogadores')
       .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
       .setColor(0xF59E0B)
-      .setDescription('Apelidos Oficiais formatados e organizados por Cargo:')
+      .setDescription('Membros organizados por cargos oficiais do Discord:')
       .setTimestamp();
 
-    const roles = ['Líder', 'Gerente', 'Membro', 'Recruta'];
-    roles.forEach(roleName => {
+    const rolesOrder = ['Líder', 'Gerente', 'Elite', 'Membro', 'Recruta'];
+    rolesOrder.forEach(roleName => {
       const rolePlayers = FACTION_PLAYERS.filter(p => p.role === roleName);
       if (rolePlayers.length > 0) {
+        const icon = roleName === 'Líder' ? '👑' : roleName === 'Gerente' ? '🛡️' : roleName === 'Elite' ? '⚡' : roleName === 'Membro' ? '⚔️' : '🔰';
         const listStr = rolePlayers
           .map(p => `• \`|${p.role}| ${p.name} | ${p.id}\``)
           .join('\n');
         embed.addFields({
-          name: `${roleName === 'Líder' ? '👑' : roleName === 'Gerente' ? '🛡️' : roleName === 'Membro' ? '⚔️' : '🔰'} ${roleName}s (${rolePlayers.length})`,
+          name: `${icon} ${roleName}s (${rolePlayers.length})`,
           value: listStr,
           inline: false,
         });
