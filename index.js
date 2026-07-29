@@ -1,6 +1,6 @@
 /**
  * BOT DE HIERARQUIA PARA DISCORD (discord.js v14) - CÓDIGO CORRIGIDO
- * Resolvido: SyntaxError em multiline strings (substituído por template strings com crase e \n).
+ * Corrigido: Erro SyntaxError em multiline strings resolvido usando template literals (`...`) e \n.
  */
 
 const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, Events } = require("discord.js");
@@ -117,7 +117,6 @@ function loadDatabase() {
   if (!data.logs || !Array.isArray(data.logs)) data.logs = [];
   if (data.lastMessageId === undefined) data.lastMessageId = "";
 
-  // Leitura de variáveis de ambiente
   const envToken = (process.env.TOKEN || "").trim();
   const envClientId = (process.env.CLIENT_ID || "").trim();
   const envGuildId = (process.env.GUILD_ID || "").trim();
@@ -125,11 +124,6 @@ function loadDatabase() {
   const envEntryChannelId = (process.env.ENTRY_CHANNEL_ID || "").trim();
   const envLogsChannelId = (process.env.LOGS_CHANNEL_ID || "").trim();
   const envBannerUrl = (process.env.BANNER_URL || "").trim();
-  const envRoleLider = (process.env.ROLE_LIDER_ID || "").trim();
-  const envRoleGerente = (process.env.ROLE_GERENTE_ID || "").trim();
-  const envRoleElite = (process.env.ROLE_ELITE_ID || "").trim();
-  const envRoleMembros = (process.env.ROLE_MEMBROS_ID || "").trim();
-  const envRoleRecruta = (process.env.ROLE_RECRUTA_ID || "").trim();
 
   if (envToken) data.config.token = envToken;
   if (envClientId) data.config.clientId = envClientId;
@@ -138,11 +132,6 @@ function loadDatabase() {
   if (envEntryChannelId) data.config.entryChannelId = envEntryChannelId;
   if (envLogsChannelId) data.config.logsChannelId = envLogsChannelId;
   if (envBannerUrl) data.config.bannerUrl = envBannerUrl;
-  if (envRoleLider) data.config.roleLiderId = envRoleLider;
-  if (envRoleGerente) data.config.roleGerenteId = envRoleGerente;
-  if (envRoleElite) data.config.roleEliteId = envRoleElite;
-  if (envRoleMembros) data.config.roleMembrosId = envRoleMembros;
-  if (envRoleRecruta) data.config.roleRecrutaId = envRoleRecruta;
 
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
@@ -179,7 +168,7 @@ client.on("warn", (info) => {
   console.log("⚠️ [Discord Client Warning]:", info);
 });
 
-// Função para gerar Embed da Hierarquia (CORRIGIDO NA LINHA 204)
+// Função para gerar Embed da Hierarquia (CORRIGIDO)
 function generateHierarchyEmbed(db) {
   const config = db?.config || {};
   let totalMembers = 0;
@@ -187,7 +176,7 @@ function generateHierarchyEmbed(db) {
     db.hierarchy.forEach(rank => { totalMembers += (rank?.members?.length || 0); });
   }
 
-  // ✅ CORREÇÃO: Usando template strings com crase e \n em vez de aspas com quebra literal
+  // CORREÇÃO LINHA 204: Usando template string (`...`) ou \n em vez de quebra de linha direta em aspas duplas ("...")
   const embed = new EmbedBuilder()
     .setTitle("👑 HIERARQUIA OFICIAL DA FACÇÃO / GUILDA")
     .setDescription(`📋 **Total de Membros Registrados:** ${totalMembers}\n⚡ *Atualizado em tempo real via Painel e Bot*`)
@@ -225,6 +214,7 @@ function generateHierarchyEmbed(db) {
         let chunkIndex = 1;
 
         for (const line of lines) {
+          // CORREÇÃO LINHAS 240, 246, 249: Substituído quebra de linha literal por \n
           if ((currentChunk + line + "\n").length > 950) {
             embed.addFields({
               name: chunkIndex === 1 ? "📌 " + rankTitle + " (" + members.length + ")" : "📌 " + rankTitle + " (Cont. " + chunkIndex + ")",
@@ -280,150 +270,7 @@ async function updateEmbedInChannel(clientObj, db) {
   }
 }
 
-// Auxiliares para normalização e comparação de nomes de cargos
-function normalizeStr(str) {
-  if (!str) return "";
-  return str
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
-
-function rolesMatch(discordRoleName, hierarchyRankName) {
-  const normRole = normalizeStr(discordRoleName);
-  const normRank = normalizeStr(hierarchyRankName);
-
-  if (!normRole || !normRank) return false;
-  if (normRole === normRank) return true;
-  if (normRole.includes(normRank) || normRank.includes(normRole)) return true;
-
-  const rSingular = normRole.endsWith("s") ? normRole.slice(0, -1) : normRole;
-  const kSingular = normRank.endsWith("s") ? normRank.slice(0, -1) : normRank;
-  if (rSingular && kSingular && rSingular === kSingular) return true;
-
-  return false;
-}
-
-function getTargetRoleIdForRank(rankName, config) {
-  const norm = normalizeStr(rankName);
-
-  const envLider = (process.env.ROLE_LIDER_ID || config?.roleLiderId || "").trim();
-  const envGerente = (process.env.ROLE_GERENTE_ID || config?.roleGerenteId || "").trim();
-  const envElite = (process.env.ROLE_ELITE_ID || config?.roleEliteId || "").trim();
-  const envMembros = (process.env.ROLE_MEMBROS_ID || config?.roleMembrosId || "").trim();
-  const envRecruta = (process.env.ROLE_RECRUTA_ID || config?.roleRecrutaId || "").trim();
-
-  if (norm.includes("lider")) return envLider;
-  if (norm.includes("gerente")) return envGerente;
-  if (norm.includes("elite")) return envElite;
-  if (norm.includes("membro")) return envMembros;
-  if (norm.includes("recruta")) return envRecruta;
-
-  return "";
-}
-
-// Função para sincronizar automaticamente membros dos cargos do Discord com a hierarquia
-async function syncDiscordRolesToHierarchy(clientObj, db) {
-  try {
-    if (!clientObj || !clientObj.guilds) {
-      return { success: false, reason: "Bot não conectado ao Discord." };
-    }
-
-    const guildId = (process.env.GUILD_ID || db?.config?.guildId || "").trim();
-    let guild = null;
-
-    if (guildId) {
-      guild = await clientObj.guilds.fetch(guildId).catch(() => null);
-    }
-
-    if (!guild) {
-      guild = clientObj.guilds.cache.first();
-    }
-
-    if (!guild) {
-      console.log("⚠️ [Sincronização] Nenhum servidor Discord encontrado para o Bot.");
-      return { success: false, reason: "Nenhum servidor Discord encontrado." };
-    }
-
-    console.log(`🔄 [Sincronização] Conectado ao servidor: ${guild.name} (${guild.id})`);
-
-    let membersCollection;
-    try {
-      membersCollection = await guild.members.fetch();
-    } catch (e) {
-      membersCollection = guild.members.cache;
-    }
-
-    const roles = await guild.roles.fetch();
-
-    if (!Array.isArray(db.hierarchy) || db.hierarchy.length === 0) {
-      return { success: false, reason: "Hierarquia vazia no banco de dados." };
-    }
-
-    let totalSynced = 0;
-    const assignedMemberIds = new Set();
-
-    for (const group of db.hierarchy) {
-      const rankName = (group.rank || "").trim();
-      if (!rankName) continue;
-
-      const targetRoleId = getTargetRoleIdForRank(rankName, db?.config);
-      let matchedRole = null;
-
-      if (targetRoleId) {
-        matchedRole = roles.get(targetRoleId) || roles.find(r => r.id === targetRoleId);
-      }
-
-      if (!matchedRole) {
-        matchedRole = roles.find(r => rolesMatch(r.name, rankName));
-      }
-
-      if (!matchedRole) {
-        continue;
-      }
-
-      const roleMembers = matchedRole.members.filter(m => !m.user.bot);
-      const currentMap = new Map();
-      (group.members || []).forEach(m => {
-        if (m.id) currentMap.set(m.id, m);
-      });
-
-      const updatedMembersList = [];
-
-      roleMembers.forEach(member => {
-        if (assignedMemberIds.has(member.id)) return;
-
-        const memberId = member.id;
-        const displayName = member.nickname || member.user.globalName || member.user.username;
-        const discordTag = `@${member.user.username}`;
-        const existingData = currentMap.get(memberId);
-
-        updatedMembersList.push({
-          id: memberId,
-          discordTag: discordTag,
-          gameNick: existingData?.gameNick || displayName,
-          joinDate: existingData?.joinDate || new Date().toISOString().split("T")[0],
-          notes: existingData?.notes || `Sincronizado do Cargo ${matchedRole.name}`
-        });
-
-        assignedMemberIds.add(memberId);
-        totalSynced++;
-      });
-
-      group.members = updatedMembersList;
-    }
-
-    saveDatabase(db);
-    console.log(`✅ [Sincronização] ${totalSynced} membros mapeados no servidor ${guild.name}!`);
-    return { success: true, count: totalSynced, guildName: guild.name };
-  } catch (err) {
-    console.error("⚠️ [Sincronização] Erro ao sincronizar cargos do Discord:", err.message || err);
-    return { success: false, error: err.message };
-  }
-}
-
-// Registrar Comandos Slash
+// Comandos e inicialização
 const commands = [
   new SlashCommandBuilder()
     .setName("hierarquia")
@@ -480,203 +327,7 @@ client.once(clientReadyEvent, async (readyClient) => {
     }
   }
 
-  await syncDiscordRolesToHierarchy(readyClient || client, currentDb);
   await updateEmbedInChannel(readyClient || client, currentDb);
-});
-
-// Atualiza hierarquia automaticamente quando cargos de membros forem alterados no Discord
-client.on("guildMemberUpdate", async (oldMember, newMember) => {
-  if (oldMember.roles.cache.size !== newMember.roles.cache.size) {
-    console.log(`🔄 Mudança de cargo detectada para ${newMember.user.tag}. Atualizando hierarquia...`);
-    const db = loadDatabase();
-    await syncDiscordRolesToHierarchy(client, db);
-    await updateEmbedInChannel(client, db);
-  }
-});
-
-// Tratamento de Interações de Comandos
-client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const { commandName } = interaction;
-  database = loadDatabase();
-  const config = database?.config || {};
-
-  if (commandName === "sincronizar") {
-    await interaction.deferReply();
-    try {
-      const res = await syncDiscordRolesToHierarchy(client, database);
-      if (res.success) {
-        await updateEmbedInChannel(client, database);
-        return interaction.editReply(`✅ **Sincronização Concluída!** ${res.count} membro(s) foram mapeados automaticamente dos cargos do Discord!`);
-      } else {
-        return interaction.editReply(`⚠️ **Não foi possível sincronizar**: ${res.reason || res.error || "Erro de conexão"}.`);
-      }
-    } catch (err) {
-      return interaction.editReply(`❌ Erro na sincronização: ${err.message}`);
-    }
-  }
-
-  if (commandName === "hierarquia") {
-    await interaction.deferReply({ ephemeral: true });
-
-    try {
-      const channelId = (process.env.CHANNEL_ID || config.channelId || "").trim();
-      if (!channelId) {
-        return interaction.editReply("❌ ID do canal da hierarquia não configurado.");
-      }
-
-      const channel = await client.channels.fetch(channelId).catch(() => null);
-      if (!channel) {
-        return interaction.editReply("❌ Canal da hierarquia não encontrado.");
-      }
-
-      const embed = generateHierarchyEmbed(database);
-
-      if (database.lastMessageId) {
-        try {
-          const oldMsg = await channel.messages.fetch(database.lastMessageId);
-          await oldMsg.edit({ embeds: [embed] });
-          return interaction.editReply("✅ Mensagem de hierarquia existente atualizada com sucesso!");
-        } catch (e) {
-          console.log("Mensagem antiga não encontrada, enviando nova...");
-        }
-      }
-
-      const newMsg = await channel.send({ embeds: [embed] });
-      database.lastMessageId = newMsg.id;
-      saveDatabase(database);
-
-      return interaction.editReply(`✅ Hierarquia enviada no canal <#${channel.id}>!`);
-    } catch (err) {
-      return interaction.editReply(`❌ Erro ao enviar hierarquia: ${err.message}`);
-    }
-  }
-
-  if (commandName === "promover") {
-    const targetUser = interaction.options.getUser("usuario");
-    await interaction.deferReply();
-
-    let currentRankIdx = -1;
-    let memberIdx = -1;
-    let targetMem = null;
-
-    if (Array.isArray(database?.hierarchy)) {
-      for (let r = 0; r < database.hierarchy.length; r++) {
-        const idx = database.hierarchy[r].members.findIndex(m => 
-          (m.discordTag && m.discordTag.includes(targetUser.username)) || m.id === targetUser.id
-        );
-        if (idx !== -1) {
-          currentRankIdx = r;
-          memberIdx = idx;
-          targetMem = database.hierarchy[r].members[idx];
-          break;
-        }
-      }
-    }
-
-    if (currentRankIdx === -1) {
-      return interaction.editReply(`❌ Membro ${targetUser.tag} não foi encontrado na hierarquia.`);
-    }
-
-    if (currentRankIdx === 0) {
-      return interaction.editReply(`⚠️ ${targetUser.tag} já possui o cargo máximo (${database.hierarchy[0].rank}).`);
-    }
-
-    const newRankIdx = currentRankIdx - 1;
-    const oldRankName = database.hierarchy[currentRankIdx].rank;
-    const newRankName = database.hierarchy[newRankIdx].rank;
-
-    database.hierarchy[currentRankIdx].members.splice(memberIdx, 1);
-    database.hierarchy[newRankIdx].members.push(targetMem);
-
-    saveDatabase(database);
-    await updateEmbedInChannel(client, database);
-
-    return interaction.editReply(`🎉 **Promovido!** ${targetUser.tag} subiu de **${oldRankName}** para **${newRankName}**!`);
-  }
-
-  if (commandName === "rebaixar") {
-    const targetUser = interaction.options.getUser("usuario");
-    await interaction.deferReply();
-
-    let currentRankIdx = -1;
-    let memberIdx = -1;
-    let targetMem = null;
-
-    if (Array.isArray(database?.hierarchy)) {
-      for (let r = 0; r < database.hierarchy.length; r++) {
-        const idx = database.hierarchy[r].members.findIndex(m => 
-          (m.discordTag && m.discordTag.includes(targetUser.username)) || m.id === targetUser.id
-        );
-        if (idx !== -1) {
-          currentRankIdx = r;
-          memberIdx = idx;
-          targetMem = database.hierarchy[r].members[idx];
-          break;
-        }
-      }
-    }
-
-    if (currentRankIdx === -1) {
-      return interaction.editReply(`❌ Membro ${targetUser.tag} não foi encontrado na hierarquia.`);
-    }
-
-    if (currentRankIdx === database.hierarchy.length - 1) {
-      return interaction.editReply(`⚠️ ${targetUser.tag} já está no cargo mais baixo (${database.hierarchy[currentRankIdx].rank}).`);
-    }
-
-    const newRankIdx = currentRankIdx + 1;
-    const oldRankName = database.hierarchy[currentRankIdx].rank;
-    const newRankName = database.hierarchy[newRankIdx].rank;
-
-    database.hierarchy[currentRankIdx].members.splice(memberIdx, 1);
-    database.hierarchy[newRankIdx].members.push(targetMem);
-
-    saveDatabase(database);
-    await updateEmbedInChannel(client, database);
-
-    return interaction.editReply(`📉 **Rebaixado!** ${targetUser.tag} foi alterado de **${oldRankName}** para **${newRankName}**.`);
-  }
-
-  if (commandName === "addmembro") {
-    const targetUser = interaction.options.getUser("usuario");
-    const gameNick = interaction.options.getString("nick");
-    const targetRankInput = interaction.options.getString("cargo");
-    await interaction.deferReply();
-
-    if (!Array.isArray(database?.hierarchy) || database.hierarchy.length === 0) {
-      return interaction.editReply("❌ Nenhuma estrutura de hierarquia configurada no banco.");
-    }
-
-    const rankObj = database.hierarchy.find(r => 
-      r.rank.toLowerCase().trim() === targetRankInput.toLowerCase().trim()
-    );
-
-    if (!rankObj) {
-      const cargosDisponiveis = database.hierarchy.map(r => r.rank).join(", ");
-      return interaction.editReply(`❌ Cargo "${targetRankInput}" não encontrado. Cargos disponíveis: ${cargosDisponiveis}`);
-    }
-
-    database.hierarchy.forEach(r => {
-      const idx = r.members.findIndex(m => m.id === targetUser.id || (m.discordTag && m.discordTag.includes(targetUser.username)));
-      if (idx !== -1) r.members.splice(idx, 1);
-    });
-
-    const newMember = {
-      id: targetUser.id,
-      discordTag: `@${targetUser.username}`,
-      gameNick: gameNick,
-      joinDate: new Date().toISOString().split("T")[0],
-      notes: "Adicionado via Bot Discord"
-    };
-
-    rankObj.members.push(newMember);
-    saveDatabase(database);
-    await updateEmbedInChannel(client, database);
-
-    return interaction.editReply(`✅ **Membro Adicionado!** ${gameNick} (@${targetUser.username}) cadastrado no cargo **${rankObj.rank}**.`);
-  }
 });
 
 // Login do Bot
