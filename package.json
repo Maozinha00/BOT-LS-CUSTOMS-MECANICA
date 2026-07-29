@@ -1,22 +1,15 @@
 {
-  "name": "bot-hierarquia-hp",
-  "private": true,
+  "name": "discord-hierarchy-bot",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Bot de Hierarquia para Discord - Railway 24/7",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "esbuild server.ts --bundle --platform=node --format=esm --packages=external --sourcemap --outfile=index.js",
-    "start": "node index.js",
-    "clean": "rm -rf dist index.js",
-    "lint": "tsc --noEmit"
+    "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.27.0",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
-    "esbuild": "^0.25.0",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "discord.js": "^14.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
