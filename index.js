@@ -14,9 +14,7 @@ import {
   TextChannel
 } from "discord.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+const currentDir = typeof __dirname !== "undefined" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 
 export type CargoKey = "Lider" | "Gerente" | "Elite" | "membros" | "Recruta";
@@ -31,9 +29,9 @@ const TAGS_CARGOS: Record<CargoKey, string> = {
 
 const HIERARQUIA_ORDEM: CargoKey[] = ["Lider", "Gerente", "Elite", "membros", "Recruta"];
 
-const DB_PATH = path.join(__dirname, "database.json");
+const DB_PATH = path.join(process.cwd(), "database.json");
 
-interface Membro {
+export interface Membro {
   userId: string;
   tag: string;
   nome: string;
@@ -44,7 +42,7 @@ interface Membro {
   updatedAt?: string;
 }
 
-interface Advertencia {
+export interface Advertencia {
   id: string;
   userId: string;
   nome: string;
@@ -53,7 +51,7 @@ interface Advertencia {
   data: string;
 }
 
-interface LogItem {
+export interface LogItem {
   id: string;
   tipo: string;
   descricao: string;
@@ -190,20 +188,20 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
   if (!nomeRaw) return "Membro";
   let temp = String(nomeRaw).trim();
 
-  // 1. Remover menções do Discord (ex: <@123456789>, <@!123456789>)
+  // 1. Remover menções do Discord
   temp = temp.replace(/<@!?\d{17,20}>/g, "").replace(/^@+/g, "");
 
-  // 2. Remover handles/tags entre parênteses no final (ex: (henribe14_57898))
+  // 2. Remover handles/tags entre parênteses
   temp = temp.replace(/\([a-zA-Z0-9._-]{2,32}\)$/g, "").trim();
 
-  // 3. Remover QUALQUER tag anterior entre barras/colchetes/parênteses no início (ex: |Souza|, |Recruta|, [Lider])
+  // 3. Remover tags anteriores
   let prevTemp = "";
   while (temp !== prevTemp) {
     prevTemp = temp;
     temp = temp.replace(/^[|\[(]\s*[^|\])]+\s*[|\])]\s*/g, "").trim();
   }
 
-  // 4. Remover tags de cargo padrão e emojis em qualquer lugar
+  // 4. Remover tags de cargo padrão e emojis
   const tagsRegex = [
     /\|\s*(lider|líder|gerente|elite|membro|membros|recruta)\s*\|\s*/gi,
     /\[\s*(lider|líder|gerente|elite|membros|membro|recruta)\s*\]\s*/gi,
@@ -230,11 +228,11 @@ export function limparNomeEId(nomeRaw: string | undefined | null, idFiveMConheci
     }
   }
 
-  // 6. Remover separadores finais com números (ex: "| 13999", "- 13999")
+  // 6. Remover separadores finais com números
   temp = temp.replace(/[\s|_|\-·•\/\\|]+\d{1,8}\s*$/gi, "");
   temp = temp.replace(/^[\s|_|\-·•\/\\|]+\d{1,8}[\s|_|\-·•\/\\|]+/gi, "");
 
-  // 7. Limpeza final de pontuação excedente
+  // 7. Limpeza final
   temp = temp.replace(/^[|\[\]()\-\s]+|[|\[\]()\-\s]+$/g, "").trim();
   temp = temp.replace(/\s+/g, " ").trim();
 
@@ -370,13 +368,13 @@ ${listar("Recruta")}
 async function atualizarQuadro(guild?: any) {
   try {
     const targetGuild = guild || await getGuild();
-    if (!targetGuild) return { success: false, message: "Guild não encontrada." };
+    if (!targetGuild) return { success: false, message: "Guild não encontrada no Discord." };
 
     const channelId = database.config.channelId || process.env.CHANNEL_ID;
     if (!channelId) return { success: false, message: "CHANNEL_ID não configurado." };
 
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
-    if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido." };
+    if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou não encontrado." };
 
     const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg";
 
@@ -393,7 +391,7 @@ async function atualizarQuadro(guild?: any) {
       if (msg) {
         await msg.edit({ embeds: [embed] });
         salvarBanco();
-        return { success: true, message: "Quadro de hierarquia atualizado!" };
+        return { success: true, message: "Quadro de hierarquia atualizado com sucesso!" };
       }
     }
 
@@ -657,7 +655,7 @@ async function buscarDadosNoCanalDeLogs(targetGuild: any) {
 export async function sincronizarHierarquia() {
   try {
     const targetGuild = await getGuild();
-    if (!targetGuild) return { success: false, message: "Guild não encontrada." };
+    if (!targetGuild) return { success: false, message: "Guild não encontrada no Discord." };
 
     await targetGuild.members.fetch();
 
@@ -829,7 +827,6 @@ client.on("ready", async () => {
 
 client.on("guildMemberAdd", async (member) => {
   if (member.user.bot) return;
-  const guild = member.guild;
   setTimeout(() => sincronizarHierarquia(), 3000);
 });
 
@@ -948,7 +945,7 @@ app.get("/api/config", (req, res) => {
 app.post("/api/config", async (req, res) => {
   const { token, clientId, guildId, channelId, entryChannelId, logsChannelId, bannerUrl } = req.body;
 
-  if (token !== undefined) database.config.token = token;
+  if (token !== undefined && token !== "") database.config.token = token;
   if (clientId !== undefined) database.config.clientId = clientId;
   if (guildId !== undefined) database.config.guildId = guildId;
   if (channelId !== undefined) database.config.channelId = channelId;
@@ -992,7 +989,7 @@ app.post("/api/atualizar-quadro", async (req, res) => {
 });
 
 app.post("/api/membro/cargo", async (req, res) => {
-  const { userId, novoCargo } = req.body;
+  const { userId, novoCargo, nome, idFiveM } = req.body;
   if (!userId || !novoCargo || !HIERARQUIA_ORDEM.includes(novoCargo)) {
     return res.status(400).json({ success: false, message: "Parâmetros inválidos." });
   }
@@ -1002,11 +999,22 @@ app.post("/api/membro/cargo", async (req, res) => {
   }
   database.cargos[novoCargo as CargoKey].push(userId);
 
-  if (database.membros[userId]) {
-    database.membros[userId].cargo = novoCargo;
-    database.membros[userId].tag = TAGS_CARGOS[novoCargo as CargoKey];
-    database.membros[userId].updatedAt = new Date().toISOString();
-  }
+  const tag = TAGS_CARGOS[novoCargo as CargoKey];
+  const memExistente = database.membros[userId];
+
+  const idFiveMFinal = idFiveM !== undefined ? idFiveM : (memExistente?.idFiveM || "");
+  const nomeFinal = nome ? limparNomeEId(nome, idFiveMFinal) : (memExistente?.nome || "Membro");
+
+  database.membros[userId] = {
+    userId,
+    tag,
+    nome: nomeFinal,
+    idFiveM: idFiveMFinal,
+    cargo: novoCargo as CargoKey,
+    joinedTimestamp: memExistente?.joinedTimestamp || Date.now(),
+    joinedAt: memExistente?.joinedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
 
   salvarBanco();
 
@@ -1014,9 +1022,7 @@ app.post("/api/membro/cargo", async (req, res) => {
   if (guild) {
     const member = await guild.members.fetch(userId).catch(() => null);
     if (member) {
-      const tag = TAGS_CARGOS[novoCargo as CargoKey];
-      const mem = database.membros[userId];
-      await aplicarNicknameOficial(member, tag, mem?.nome || member.displayName, mem?.idFiveM || "");
+      await aplicarNicknameOficial(member, tag, nomeFinal, idFiveMFinal);
     }
     await atualizarQuadro(guild);
   }
