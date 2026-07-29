@@ -77,7 +77,7 @@ function carregarBanco() {
           clientId: process.env.CLIENT_ID || "",
           guildId: process.env.GUILD_ID || "",
           channelId: process.env.CHANNEL_ID || "1527817862532694026",
-          entryChannelId: process.env.ENTRY_CHANNEL_ID || "1524222632923496509"
+          entryChannelId: process.env.ENTRY_CHANNEL_ID || "1515448473246498866"
         };
       }
     } catch (err) {
@@ -289,7 +289,7 @@ async function atualizarQuadro(guild) {
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou sem acesso." };
 
-    const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/vfs5n0g.jpeg";
+    const bannerUrl = database.config.bannerUrl || "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop";
 
     const embed = new EmbedBuilder()
       .setTitle("⚔️ HIERARQUIA DO CLÃ ⚔️")
