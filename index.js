@@ -294,6 +294,181 @@ const commands = [
     .addStringOption(opt => opt.setName("cargo").setDescription("Cargo (Lider, Gerente, Elite, membros, Recruta)").setRequired(true))
 ].map(cmd => cmd.toJSON());
 
+// Evento InteractionCreate - Processa os comandos Slash em < 3 segundos com deferReply()
+client.on(Events.InteractionCreate || "interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const { commandName } = interaction;
+
+  try {
+    // CRÍTICO: Responde em < 3s com deferReply() para evitar o erro "O aplicativo não respondeu"
+    await interaction.deferReply({ ephemeral: true });
+
+    if (commandName === "sincronizar") {
+      if (!interaction.guild) {
+        return interaction.editReply("❌ Este comando deve ser executado dentro do servidor Discord.");
+      }
+
+      const db = loadDatabase();
+      const membersFetched = await interaction.guild.members.fetch().catch((e) => {
+        console.error("Erro ao buscar membros no Discord:", e.message);
+        return null;
+      });
+
+      if (!membersFetched) {
+        return interaction.editReply(
+          "⚠️ Não foi possível buscar os membros do servidor.\n" +
+          "👉 **Ação necessária:** Ative a opção **SERVER MEMBERS INTENT** no **Discord Developer Portal** (Aba Bot -> Privileged Gateway Intents)."
+        );
+      }
+
+      let countSync = 0;
+      HIERARQUIA_ORDEM.forEach((rankName) => {
+        const role = interaction.guild.roles.cache.find(
+          (r) => r.name.toLowerCase() === rankName.toLowerCase()
+        );
+
+        let groupObj = db.hierarchy.find(
+          (h) => h.rank.toLowerCase() === rankName.toLowerCase()
+        );
+        if (!groupObj) {
+          groupObj = { rank: rankName, color: "#5865F2", members: [] };
+          db.hierarchy.push(groupObj);
+        }
+
+        if (role) {
+          role.members.forEach((member) => {
+            if (member.user.bot) return; // Ignora outros bots
+
+            const discordTag = member.user.username;
+            const gameNick = member.displayName || member.user.username;
+            const existingIndex = groupObj.members.findIndex(
+              (m) => m.discordTag.toLowerCase() === discordTag.toLowerCase() || m.id === member.id
+            );
+
+            if (existingIndex === -1) {
+              groupObj.members.push({
+                id: member.id,
+                discordTag: discordTag,
+                gameNick: gameNick,
+                joinedAt: new Date().toISOString().split("T")[0],
+                addedBy: interaction.user.username,
+                notes: "Sincronizado do Discord"
+              });
+              countSync++;
+            } else {
+              groupObj.members[existingIndex].gameNick = gameNick;
+              groupObj.members[existingIndex].discordTag = discordTag;
+            }
+          });
+        }
+      });
+
+      saveDatabase(db);
+      await updateEmbedInChannel(client, db);
+
+      await interaction.editReply(
+        `✅ **Sincronização Concluída!** ${countSync} membro(s) processados e atualizados na hierarquia do servidor!`
+      );
+    } else if (commandName === "hierarquia") {
+      const db = loadDatabase();
+      await updateEmbedInChannel(client, db);
+      await interaction.editReply("✅ Embed da hierarquia foi atualizada e fixada no canal!");
+    } else if (commandName === "promover") {
+      const targetUser = interaction.options.getUser("usuario");
+      const db = loadDatabase();
+
+      let currentRankIndex = -1;
+      let memberObj = null;
+
+      for (let i = 0; i < db.hierarchy.length; i++) {
+        const mIdx = db.hierarchy[i].members.findIndex(
+          (m) => m.id === targetUser.id || m.discordTag.toLowerCase() === targetUser.username.toLowerCase()
+        );
+        if (mIdx !== -1) {
+          currentRankIndex = i;
+          memberObj = db.hierarchy[i].members.splice(mIdx, 1)[0];
+          break;
+        }
+      }
+
+      if (!memberObj) {
+        return interaction.editReply(`❌ O membro **${targetUser.username}** não foi encontrado na hierarquia.`);
+      }
+
+      const nextRankIndex = Math.max(0, currentRankIndex - 1);
+      const nextRankGroup = db.hierarchy[nextRankIndex];
+      nextRankGroup.members.push(memberObj);
+
+      saveDatabase(db);
+      await updateEmbedInChannel(client, db);
+
+      await interaction.editReply(`🎉 **${targetUser.username}** foi promovido para **${nextRankGroup.rank}**!`);
+    } else if (commandName === "rebaixar") {
+      const targetUser = interaction.options.getUser("usuario");
+      const db = loadDatabase();
+
+      let currentRankIndex = -1;
+      let memberObj = null;
+
+      for (let i = 0; i < db.hierarchy.length; i++) {
+        const mIdx = db.hierarchy[i].members.findIndex(
+          (m) => m.id === targetUser.id || m.discordTag.toLowerCase() === targetUser.username.toLowerCase()
+        );
+        if (mIdx !== -1) {
+          currentRankIndex = i;
+          memberObj = db.hierarchy[i].members.splice(mIdx, 1)[0];
+          break;
+        }
+      }
+
+      if (!memberObj) {
+        return interaction.editReply(`❌ O membro **${targetUser.username}** não foi encontrado na hierarquia.`);
+      }
+
+      const prevRankIndex = Math.min(db.hierarchy.length - 1, currentRankIndex + 1);
+      const prevRankGroup = db.hierarchy[prevRankIndex];
+      prevRankGroup.members.push(memberObj);
+
+      saveDatabase(db);
+      await updateEmbedInChannel(client, db);
+
+      await interaction.editReply(`📉 **${targetUser.username}** foi alterado para **${prevRankGroup.rank}**.`);
+    } else if (commandName === "addmembro") {
+      const targetUser = interaction.options.getUser("usuario");
+      const nick = interaction.options.getString("nick");
+      const cargo = interaction.options.getString("cargo");
+
+      const db = loadDatabase();
+      let group = db.hierarchy.find((h) => h.rank.toLowerCase() === cargo.toLowerCase());
+      if (!group) {
+        group = db.hierarchy[db.hierarchy.length - 1];
+      }
+
+      group.members.push({
+        id: targetUser.id,
+        discordTag: targetUser.username,
+        gameNick: nick,
+        joinedAt: new Date().toISOString().split("T")[0],
+        addedBy: interaction.user.username,
+        notes: "Adicionado via comando Discord"
+      });
+
+      saveDatabase(db);
+      await updateEmbedInChannel(client, db);
+
+      await interaction.editReply(`✅ Membro **${nick}** (@${targetUser.username}) adicionado em **${group.rank}**!`);
+    }
+  } catch (err) {
+    console.error("⚠️ Erro ao executar comando Slash:", err);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: `❌ Erro na execução: ${err.message || err}` }).catch(() => {});
+    } else {
+      await interaction.reply({ content: `❌ Erro na execução: ${err.message || err}`, ephemeral: true }).catch(() => {});
+    }
+  }
+});
+
 const clientReadyEvent = Events && Events.ClientReady ? Events.ClientReady : "clientReady";
 
 client.once(clientReadyEvent, async (readyClient) => {
