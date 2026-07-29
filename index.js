@@ -1,19 +1,13 @@
 /**
  * BOT DE HIERARQUIA PARA DISCORD (discord.js v14)
- * Gerado automaticamente via Painel Web de Hierarquia
+ * Otimizado para Railway, Replit e VPS
  */
 
 const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
 
-const HIERARQUIA_ORDEM = [
-  "Lider",
-  "Gerente",
-  "Elite",
-  "membros",
-  "Recruta"
-];
+const HIERARQUIA_ORDEM = ["Lider", "Gerente", "Elite", "membros", "Recruta"];
 const DB_PATH = path.join(process.cwd(), "database.json");
 
 // Inicializa banco de dados se necessário
@@ -31,77 +25,12 @@ function loadDatabase() {
         bannerUrl: process.env.BANNER_URL || "https://i.imgur.com/pf92vzV.jpeg"
       },
       hierarchy: [
-  {
-    "rank": "Lider",
-    "color": "#FFD700",
-    "members": [
-      {
-        "id": "1",
-        "discordTag": "jones_lider",
-        "gameNick": "[Líder] Jones",
-        "joinedAt": "2026-07-29",
-        "addedBy": "System",
-        "notes": "Fundador e Líder Supremo"
-      }
-    ]
-  },
-  {
-    "rank": "Gerente",
-    "color": "#9B59B6",
-    "members": [
-      {
-        "id": "2",
-        "discordTag": "carlos_gerente",
-        "gameNick": "[Gerente] Carlos",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Jones",
-        "notes": "Supervisão do Servidor"
-      }
-    ]
-  },
-  {
-    "rank": "Elite",
-    "color": "#3498DB",
-    "members": [
-      {
-        "id": "3",
-        "discordTag": "shadow_elite",
-        "gameNick": "[Elite] Shadow",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Carlos",
-        "notes": "Membro de Destaque"
-      }
-    ]
-  },
-  {
-    "rank": "membros",
-    "color": "#2ECC71",
-    "members": [
-      {
-        "id": "4",
-        "discordTag": "lucas_membro",
-        "gameNick": "[Membro] Lucas",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Carlos",
-        "notes": "Membro Ativo"
-      }
-    ]
-  },
-  {
-    "rank": "Recruta",
-    "color": "#E67E22",
-    "members": [
-      {
-        "id": "5",
-        "discordTag": "rookie_recruta",
-        "gameNick": "[Recruta] Rookie",
-        "joinedAt": "2026-07-29",
-        "addedBy": "Shadow",
-        "notes": "Em período de avaliação"
-      }
-    ]
-  }
-],
+        { rank: "Lider", color: "#FFD700", members: [] },
+        { rank: "Gerente", color: "#9B59B6", members: [] },
+        { rank: "Elite", color: "#3498DB", members: [] },
+        { rank: "membros", color: "#2ECC71", members: [] },
+        { rank: "Recruta", color: "#E67E22", members: [] }
+      ],
       logs: []
     };
     fs.writeFileSync(DB_PATH, JSON.stringify(initialData, null, 2));
@@ -131,11 +60,11 @@ function generateHierarchyEmbed(db) {
 
   const embed = new EmbedBuilder()
     .setTitle("👑 HIERARQUIA OFICIAL DA FACÇÃO / GUILDA")
-    .setDescription(`📋 **Total de Membros Registrados:** ${totalMembers}\n⚡ *Atualizado em tempo real via Painel e Bot*`)
+    .setDescription(`📋 **Total de Membros Registrados:** ${totalMembers}\n⚡ *Atualizado em tempo real via Painel Web e Bot*`)
     .setColor(0x5865F2)
     .setImage(db.config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg")
     .setTimestamp()
-    .setFooter({ text: "Sistema de Hierarquia Discord • Bot Ativo" });
+    .setFooter({ text: "Sistema de Hierarquia Discord • Bot Ativo 24/7" });
 
   db.hierarchy.forEach(group => {
     let memberListText = "";
@@ -179,21 +108,24 @@ const commands = [
 ].map(cmd => cmd.toJSON());
 
 client.once("ready", async () => {
-  console.log(`✅ Bot online como ${client.user.tag}!`);
+  console.log(`✅ Bot online no Discord como ${client.user.tag}!`);
 
-  // Registrar Slash Commands se GuildID e ClientID estiverem configurados
-  if (database.config.clientId && database.config.token) {
+  const TOKEN = database.config.token || process.env.TOKEN;
+  const CLIENT_ID = database.config.clientId || process.env.CLIENT_ID;
+  const GUILD_ID = database.config.guildId || process.env.GUILD_ID;
+
+  if (CLIENT_ID && TOKEN) {
     try {
-      const rest = new REST({ version: "10" }).setToken(database.config.token);
+      const rest = new REST({ version: "10" }).setToken(TOKEN);
       console.log("🔄 Registrando comandos Slash...");
-      if (database.config.guildId) {
+      if (GUILD_ID) {
         await rest.put(
-          Routes.applicationGuildCommands(database.config.clientId, database.config.guildId),
+          Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
           { body: commands }
         );
       } else {
         await rest.put(
-          Routes.applicationCommands(database.config.clientId),
+          Routes.applicationCommands(CLIENT_ID),
           { body: commands }
         );
       }
@@ -204,7 +136,7 @@ client.once("ready", async () => {
   }
 });
 
-// Tratamento de Interações de Comandos
+// Resposta a Comandos Slash
 client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -215,9 +147,10 @@ client.on("interactionCreate", async interaction => {
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      const channel = await client.channels.fetch(database.config.channelId);
+      const channelId = database.config.channelId || process.env.CHANNEL_ID;
+      const channel = await client.channels.fetch(channelId);
       if (!channel) {
-        return interaction.editReply("❌ Canal da hierarquia não foi encontrado. Verifique o CHANNEL_ID nas configurações.");
+        return interaction.editReply("❌ Canal da hierarquia não foi encontrado. Verifique o CHANNEL_ID nas variáveis.");
       }
 
       const embed = generateHierarchyEmbed(database);
@@ -226,9 +159,9 @@ client.on("interactionCreate", async interaction => {
         try {
           const oldMsg = await channel.messages.fetch(database.lastMessageId);
           await oldMsg.edit({ embeds: [embed] });
-          return interaction.editReply("✅ Mensagem de hierarquia existente atualizada com sucesso!");
+          return interaction.editReply("✅ Mensagem de hierarquia existente atualizada no canal!");
         } catch (e) {
-          console.log("Mensagem antiga não encontrada, enviando nova...");
+          console.log("Mensagem antiga não encontrada, enviando uma nova...");
         }
       }
 
@@ -246,7 +179,6 @@ client.on("interactionCreate", async interaction => {
     const targetUser = interaction.options.getUser("usuario");
     await interaction.deferReply();
 
-    // Lógica para promover no banco
     let currentRankIdx = -1;
     let memberIdx = -1;
     let targetMem = null;
@@ -262,11 +194,11 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (currentRankIdx === -1) {
-      return interaction.editReply(`❌ Membro ${targetUser.tag} não foi encontrado no banco da hierarquia.`);
+      return interaction.editReply(`❌ Membro **${targetUser.tag}** não foi encontrado na hierarquia.`);
     }
 
     if (currentRankIdx === 0) {
-      return interaction.editReply(`⚠️ ${targetUser.tag} já possui o cargo máximo (${database.hierarchy[0].rank}).`);
+      return interaction.editReply(`⚠️ **${targetUser.tag}** já possui o cargo máximo (${database.hierarchy[0].rank}).`);
     }
 
     const newRankIdx = currentRankIdx - 1;
@@ -282,10 +214,10 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-// Login do Bot
-const TOKEN = database.config.token || process.env.TOKEN;
+// Conectar ao Discord
+const TOKEN = process.env.TOKEN || database.config.token;
 if (TOKEN) {
   client.login(TOKEN);
 } else {
-  console.log("⚠️ TOKEN do Bot não foi informado nas variáveis ou em database.json.");
+  console.log("⚠️ ATENÇÃO: Defina a variável TOKEN nas configurações do Railway.");
 }
