@@ -457,7 +457,7 @@ async function publicarOuAtualizarPainel(targetGuild) {
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou sem acesso." };
 
-    const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/j8im4Sv.jpeg";
+    const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/pf92vzV.jpeg";
 
     const embed = new EmbedBuilder()
       .setTitle("⚔️ HIERARQUIA DO CLÃ ⚔️")
