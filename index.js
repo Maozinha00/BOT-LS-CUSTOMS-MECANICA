@@ -289,7 +289,7 @@ async function atualizarQuadro(guild) {
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou sem acesso." };
 
-    const bannerUrl = database.config.bannerUrl || "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop";
+    const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/vfs5n0g.jpeg";
 
     const embed = new EmbedBuilder()
       .setTitle("⚔️ HIERARQUIA DO CLÃ ⚔️")
