@@ -77,7 +77,7 @@ function carregarBanco() {
           clientId: process.env.CLIENT_ID || "",
           guildId: process.env.GUILD_ID || "",
           channelId: process.env.CHANNEL_ID || "1527817862532694026",
-          entryChannelId: process.env.ENTRY_CHANNEL_ID || "1515448473246498866"
+          entryChannelId: process.env.ENTRY_CHANNEL_ID || "1524222632923496509"
         };
       }
     } catch (err) {
@@ -134,14 +134,34 @@ function limparNomeEId(nome) {
   return temp || nome;
 }
 
-function extrairIdFiveM(displayName, currentId) {
-  if (currentId && currentId !== "00" && currentId !== "0" && currentId.trim() !== "") {
-    return currentId.trim();
-  }
-  if (!displayName) return "";
-  const match = displayName.match(/(?:[\s|_|\-·•\/\\|#()\[\]]+|^)(\d{1,8})\s*(?:\)|\])?$/);
-  if (match && match[1] && match[1] !== "00" && match[1] !== "0") {
-    return match[1].trim();
+function extrairIdFiveM(...inputs) {
+  for (const item of inputs) {
+    if (!item) continue;
+    const str = String(item).trim();
+    if (!str || str === "00" || str === "0") continue;
+
+    // Se for apenas números (ID FiveM puro)
+    if (/^\d{1,8}$/.test(str)) {
+      return str;
+    }
+
+    // Procura ID entre colchetes ou parênteses, ex: [1234] ou (1234)
+    const bracketMatch = str.match(/[\[(](\d{1,8})[\])]/);
+    if (bracketMatch && bracketMatch[1] && bracketMatch[1] !== "00" && bracketMatch[1] !== "0") {
+      return bracketMatch[1];
+    }
+
+    // Procura ID no final da string após separadores (| - # / _ espaço)
+    const endMatch = str.match(/(?:[\s|_|\-·•\/\\|#()\[\]]+|^)(\d{1,8})\s*(?:\)|\])?$/);
+    if (endMatch && endMatch[1] && endMatch[1] !== "00" && endMatch[1] !== "0") {
+      return endMatch[1];
+    }
+
+    // Procura ID no início da string antes de separadores (1234 | Nome)
+    const startMatch = str.match(/^(\d{1,8})(?:[\s|_|\-·•\/\\|#()\[\]]+)/);
+    if (startMatch && startMatch[1] && startMatch[1] !== "00" && startMatch[1] !== "0") {
+      return startMatch[1];
+    }
   }
   return "";
 }
@@ -289,7 +309,7 @@ async function atualizarQuadro(guild) {
     const canal = await targetGuild.channels.fetch(channelId).catch(() => null);
     if (!canal || !(canal instanceof TextChannel)) return { success: false, message: "Canal inválido ou sem acesso." };
 
-    const bannerUrl = database.config.bannerUrl || "https://i.imgur.com/j8im4Sv.jpeg";
+    const bannerUrl = database.config.bannerUrl || "https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=1200&auto=format&fit=crop";
 
     const embed = new EmbedBuilder()
       .setTitle("⚔️ HIERARQUIA DO CLÃ ⚔️")
@@ -384,8 +404,8 @@ async function sincronizarComDiscord(guild) {
 
       if (cargoPrincipal) {
         const membroAtual = database.membros[userId];
+        const idFiveM = extrairIdFiveM(membroAtual?.idFiveM, member.nickname, member.displayName, member.user.username);
         const nomeLimpo = limparNomeEId(membroAtual?.nome || member.displayName || member.user.username);
-        const idFiveM = extrairIdFiveM(member.displayName, membroAtual?.idFiveM);
         const tag = TAGS_CARGOS[cargoPrincipal];
 
         if (!database.cargos[cargoPrincipal].includes(userId)) {
@@ -516,7 +536,7 @@ client.on("guildMemberUpdate", async (oldMember, newMember) => {
       const tag = TAGS_CARGOS[cargoPrincipal];
       const membroAtual = database.membros[newMember.id];
       const rawName = newMember.displayName || newMember.user.username;
-      const idFiveM = extrairIdFiveM(rawName, membroAtual?.idFiveM);
+      const idFiveM = extrairIdFiveM(membroAtual?.idFiveM, newMember.nickname, newMember.displayName, newMember.user.username);
       const nomeLimpo = limparNomeEId(membroAtual?.nome || rawName);
 
       Object.keys(database.cargos).forEach((k) => {
@@ -591,8 +611,12 @@ client.on("interactionCreate", async (interaction) => {
     if (guild) {
       const mem = await guild.members.fetch(targetUser.id).catch(() => null);
       if (mem) {
-        if (!idFiveM) idFiveM = extrairIdFiveM(mem.displayName, "");
-        if (!nomeInput) nomeLimpo = limparNomeEId(mem.displayName || targetUser.username);
+        if (!idFiveM) {
+          idFiveM = extrairIdFiveM(database.membros[targetUser.id]?.idFiveM, mem.nickname, mem.displayName, mem.user.username);
+        }
+        if (!nomeInput) {
+          nomeLimpo = limparNomeEId(mem.displayName || targetUser.username);
+        }
       }
     }
 
@@ -752,8 +776,12 @@ app.post("/api/add-membro", async (req, res) => {
   if (guild) {
     const mem = await guild.members.fetch(userId).catch(() => null);
     if (mem) {
-      if (!idGame) idGame = extrairIdFiveM(mem.displayName, "");
-      if (!nome) nomeLimpo = limparNomeEId(mem.displayName || mem.user.username);
+      if (!idGame) {
+        idGame = extrairIdFiveM(database.membros[userId]?.idFiveM, mem.nickname, mem.displayName, mem.user.username);
+      }
+      if (!nome) {
+        nomeLimpo = limparNomeEId(mem.displayName || mem.user.username);
+      }
     }
   }
 
