@@ -25,6 +25,8 @@ if (!process.env.DISCORD_TOKEN) {
   console.error('Certifique-se de executar "npm install dotenv" e ter um arquivo .env configurado.');
 }
 
+const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1515448473246498866';
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -62,8 +64,28 @@ const FACTION_PLAYERS = [
   { id: '30527', name: 'uaiden covert', role: 'Recruta' },
 ];
 
+// Helper para enviar embeds no canal de logs (1515448473246498866)
+async function sendLogEmbed(guild, title, description, color = 0x10B981, fields = []) {
+  try {
+    const channel = guild.channels.cache.get(LOG_CHANNEL_ID) || await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+    if (channel && channel.isTextBased()) {
+      const embed = new EmbedBuilder()
+        .setTitle(title)
+        .setThumbnail('https://i.imgur.com/pf92vzV.jpeg')
+        .setColor(color)
+        .setDescription(description)
+        .addFields(fields)
+        .setTimestamp();
+      await channel.send({ embeds: [embed] });
+    }
+  } catch (err) {
+    console.error('⚠️ Não foi possível enviar log para o canal 1515448473246498866:', err.message);
+  }
+}
+
 client.once('ready', async () => {
   console.log(`✅ Bot rodando com sucesso como: ${client.user.tag}`);
+  console.log(`📢 Canal de logs atrelado: ${LOG_CHANNEL_ID}`);
   
   // Registrar Comando /sincronizar
   const commands = [
@@ -86,6 +108,130 @@ client.once('ready', async () => {
     console.log('✅ Comandos Slash registrados com sucesso!');
   } catch (err) {
     console.error('❌ Erro ao registrar comandos:', err);
+  }
+});
+
+// EVENTO AUTOMÁTICO: Quando um membro ganha ou perde o cargo de Recruta
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+  const hadRole = oldMember.roles.cache.some(r => r.name.toLowerCase().includes('recruta'));
+  const hasRole = newMember.roles.cache.some(r => r.name.toLowerCase().includes('recruta'));
+
+  // 1. MEMBRO APROVADO COMO RECRUTA -> Coloca a tag |Recruta| e adiciona à hierarquia
+  if (!hadRole && hasRole) {
+    console.log(`🟢 Membro ${newMember.user.tag} aprovado como Recruta.`);
+    
+    const currentName = newMember.nickname || newMember.user.globalName || newMember.user.username;
+    const matchId = currentName.match(/\b(\d{3,6})\b/) || newMember.user.username.match(/\b(\d{3,6})\b/);
+    const playerId = matchId ? matchId[1] : newMember.user.id.slice(-5);
+    
+    let cleanName = currentName
+      .replace(/\|(Líder|Gerente|Membro|Recruta)\|/gi, '')
+      .replace(/\b\d{3,6}\b/g, '')
+      .replace(/[-|]/g, ' ')
+      .trim();
+    if (!cleanName) cleanName = newMember.user.username;
+
+    const formattedNick = `|Recruta| ${cleanName} | ${playerId}`;
+
+    try {
+      if (newMember.nickname !== formattedNick) {
+        await newMember.setNickname(formattedNick);
+      }
+    } catch (err) {
+      console.error(`Não foi possível alterar apelido de ${newMember.user.tag}:`, err.message);
+    }
+
+    // Adiciona na hierarquia de jogadores
+    const existingIndex = FACTION_PLAYERS.findIndex(p => p.id === playerId || p.name.toLowerCase() === cleanName.toLowerCase());
+    if (existingIndex >= 0) {
+      FACTION_PLAYERS[existingIndex].role = 'Recruta';
+      FACTION_PLAYERS[existingIndex].name = cleanName;
+    } else {
+      FACTION_PLAYERS.push({ id: playerId, name: cleanName, role: 'Recruta' });
+    }
+
+    // Envia Log para o Canal 1515448473246498866
+    await sendLogEmbed(
+      newMember.guild,
+      '🔰 Novo Recruta Aprovado & Adicionado à Hierarquia',
+      `O membro <@${newMember.user.id}> foi aprovado com o cargo **Recruta** e inserido automaticamente na hierarquia!`,
+      0x10B981,
+      [
+        { name: '👤 Jogador', value: cleanName, inline: true },
+        { name: '🪪 ID do Jogo', value: `\`${playerId}\``, inline: true },
+        { name: '🏷️ Apelido Aplicado', value: `\`${formattedNick}\``, inline: false },
+        { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
+      ]
+    );
+  }
+
+  // 2. CARGO RECRUTA REMOVIDO -> Tira a tag |Recruta| e remove da hierarquia
+  if (hadRole && !hasRole) {
+    console.log(`🔴 Cargo Recruta removido de ${newMember.user.tag}.`);
+
+    const currentName = newMember.nickname || newMember.user.globalName || newMember.user.username;
+    const matchId = currentName.match(/\b(\d{3,6})\b/);
+    const playerId = matchId ? matchId[1] : null;
+
+    let newNick = currentName.replace(/\|Recruta\|\s*/gi, '').trim();
+    try {
+      if (newMember.nickname && newMember.nickname !== newNick) {
+        await newMember.setNickname(newNick.length > 0 ? newNick : null);
+      }
+    } catch (err) {
+      console.error(`Erro ao remover apelido recruta:`, err.message);
+    }
+
+    // Remove da hierarquia
+    let removedPlayer = null;
+    if (playerId) {
+      const idx = FACTION_PLAYERS.findIndex(p => p.id === playerId);
+      if (idx >= 0) {
+        removedPlayer = FACTION_PLAYERS.splice(idx, 1)[0];
+      }
+    }
+
+    // Envia Log para o Canal 1515448473246498866
+    await sendLogEmbed(
+      newMember.guild,
+      '⚠️ Cargo Recruta Removido & Retirado da Hierarquia',
+      `O cargo **Recruta** foi removido de <@${newMember.user.id}>. A tag foi removida e o jogador foi excluído da hierarquia.`,
+      0xEF4444,
+      [
+        { name: '👤 Jogador', value: removedPlayer ? removedPlayer.name : newMember.user.username, inline: true },
+        { name: '🪪 ID do Jogo', value: playerId ? `\`${playerId}\`` : 'N/A', inline: true },
+        { name: '🏷️ Status', value: 'Tag |Recruta| Removida do Discord e Excluído do Painel', inline: false },
+        { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
+      ]
+    );
+  }
+});
+
+// EVENTO AUTOMÁTICO: Quando um membro sai do servidor do Discord
+client.on('guildMemberRemove', async member => {
+  const currentName = member.nickname || member.user.globalName || member.user.username;
+  const matchId = currentName.match(/\b(\d{3,6})\b/);
+  const playerId = matchId ? matchId[1] : null;
+
+  if (playerId) {
+    const idx = FACTION_PLAYERS.findIndex(p => p.id === playerId);
+    if (idx >= 0) {
+      const removed = FACTION_PLAYERS.splice(idx, 1)[0];
+      console.log(`🚪 Membro ID ${playerId} saiu do servidor. Removido da hierarquia.`);
+
+      await sendLogEmbed(
+        member.guild,
+        '🚪 Membro Saiu do Servidor',
+        `O jogador **${removed.name}** (`ID: ${removed.id}`) saiu do servidor do Discord e foi removido da hierarquia.`,
+        0xF59E0B,
+        [
+          { name: '👤 Jogador', value: removed.name, inline: true },
+          { name: '🪪 ID', value: `\`${removed.id}\``, inline: true },
+          { name: '🛡️ Cargo Anterior', value: removed.role, inline: true },
+          { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
+        ]
+      );
+    }
   }
 });
 
