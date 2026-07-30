@@ -118,8 +118,19 @@ async function publishHierarchyToChannel(guild) {
     text += `📅 Atualizado: ${dateStr}\n\n`;
     text += `══════════════════════════════════════\n\n`;
 
+    const seenChannel = new Set();
+    const cleanPlayersChannel = FACTION_PLAYERS.filter(p => {
+      const idKey = (p.id || '').trim();
+      const nameKey = (p.name || '').trim().toLowerCase();
+      if (idKey && seenChannel.has(idKey)) return false;
+      if (nameKey && seenChannel.has(nameKey)) return false;
+      if (idKey) seenChannel.add(idKey);
+      if (nameKey) seenChannel.add(nameKey);
+      return true;
+    });
+
     rolesData.forEach(({ role, title, icon }) => {
-      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === role);
+      const rolePlayers = cleanPlayersChannel.filter(p => p.role === role);
       const countStr = String(rolePlayers.length).padStart(2, '0');
 
       text += `${icon} ╭─ ${title} 「${countStr}」\n`;
@@ -417,8 +428,19 @@ client.on('interactionCreate', async interaction => {
     text += `📅 Atualizado: ${dateStr}\n\n`;
     text += `══════════════════════════════════════\n\n`;
 
+    const seenCmd = new Set();
+    const cleanPlayersCmd = FACTION_PLAYERS.filter(p => {
+      const idKey = (p.id || '').trim();
+      const nameKey = (p.name || '').trim().toLowerCase();
+      if (idKey && seenCmd.has(idKey)) return false;
+      if (nameKey && seenCmd.has(nameKey)) return false;
+      if (idKey) seenCmd.add(idKey);
+      if (nameKey) seenCmd.add(nameKey);
+      return true;
+    });
+
     rolesData.forEach(({ role, title, icon }) => {
-      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === role);
+      const rolePlayers = cleanPlayersCmd.filter(p => p.role === role);
       const countStr = String(rolePlayers.length).padStart(2, '0');
 
       text += `${icon} ╭─ ${title} 「${countStr}」\n`;
