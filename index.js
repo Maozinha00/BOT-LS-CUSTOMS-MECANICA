@@ -479,10 +479,7 @@ client.on('interactionCreate', async interaction => {
         .setTitle('🔄 Sincronização por Cargos Concluída')
         .setThumbnail(BANNER_URL)
         .setColor(0x10B981)
-        .setDescription(`**${synced}** membros foram sincronizados com sucesso.
-
-` + (logs.join('
-').slice(0, 3800) || 'Todos os membros já estavam alinhados.'))
+        .setDescription(`**${synced}** membros foram sincronizados com sucesso.\n\n` + (logs.join('\n').slice(0, 3800) || 'Todos os membros já estavam alinhados.'))
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
