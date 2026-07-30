@@ -9,6 +9,7 @@
  * • Membro:  1528075981078663259
  * • Recruta: 1515125826780135485
  * • Logs:    1515448473246498866
+ * • Canal Hierarquia: 1527817862532694026
  */
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
@@ -24,6 +25,8 @@ if (!process.env.DISCORD_TOKEN) {
 }
 
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1515448473246498866';
+const HIERARCHY_CHANNEL_ID = process.env.HIERARCHY_CHANNEL_ID || '1527817862532694026';
+const BANNER_URL = 'https://i.imgur.com/pf92vzV.jpeg';
 
 // Mapeamento de Cargos por ID no Discord
 const FACTION_ROLES = {
@@ -87,6 +90,70 @@ async function sendLogEmbed(guild, title, description, color = 0x10B981, fields 
     }
   } catch (err) {
     console.error('⚠️ Não foi possível enviar log para o canal de logs:', err.message);
+  }
+}
+
+// Helper para publicar a hierarquia oficial com a imagem grande no canal (1527817862532694026)
+async function publishHierarchyToChannel(guild) {
+  try {
+    const channel = guild.channels.cache.get(HIERARCHY_CHANNEL_ID) || await guild.channels.fetch(HIERARCHY_CHANNEL_ID).catch(() => null);
+    if (!channel || !channel.isTextBased()) return;
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = `Hoje às ${timeStr}`;
+
+    const rolesData = [
+      { role: 'Líder', title: 'LÍDERES', icon: '👑' },
+      { role: 'Gerente', title: 'GERENTES', icon: '🛡️' },
+      { role: 'Elite', title: 'ELITE', icon: '⚡' },
+      { role: 'Membro', title: 'MEMBROS', icon: '⚔️' },
+      { role: 'Recruta', title: 'RECRUTAS', icon: '🔰' },
+    ];
+
+    let text = `╔══════════════════════════════════════╗\n`;
+    text += `           🐺👑 H U N T E R S 👑🐺\n`;
+    text += `        『 HIERARQUIA OFICIAL 』\n`;
+    text += `╚══════════════════════════════════════╝\n\n`;
+    text += `📅 Atualizado: ${dateStr}\n\n`;
+    text += `══════════════════════════════════════\n\n`;
+
+    rolesData.forEach(({ role, title, icon }) => {
+      const rolePlayers = FACTION_PLAYERS.filter(p => p.role === role);
+      const countStr = String(rolePlayers.length).padStart(2, '0');
+
+      text += `${icon} ╭─ ${title} 「${countStr}」\n`;
+      if (rolePlayers.length > 0) {
+        rolePlayers.forEach(p => {
+          text += `┃ ➤ |${role}| ${p.name} | ${p.id}\n`;
+        });
+      }
+      text += `╰────────────────────────────\n\n`;
+    });
+
+    text += `╔══════════════════════════════════════╗\n`;
+    text += `        🐺 FAMÍLIA HUNTERS FIVEZ 🐺\n`;
+    text += `      「Honra • União • Disciplina」\n`;
+    text += `╚══════════════════════════════════════╝`;
+
+    const embed = new EmbedBuilder()
+      .setColor(0xF59E0B)
+      .setDescription(text)
+      .setImage(BANNER_URL)
+      .setTimestamp();
+
+    const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+    const existingMsg = messages ? messages.find(m => m.author.id === client.user.id) : null;
+
+    if (existingMsg) {
+      await existingMsg.edit({ embeds: [embed] });
+      console.log(`📢 Hierarquia atualizada no canal ${HIERARCHY_CHANNEL_ID}`);
+    } else {
+      await channel.send({ embeds: [embed] });
+      console.log(`📢 Nova Hierarquia publicada com banner no canal ${HIERARCHY_CHANNEL_ID}`);
+    }
+  } catch (err) {
+    console.error('⚠️ Não foi possível publicar no canal da hierarquia:', err.message);
   }
 }
 
@@ -210,6 +277,7 @@ client.once('ready', async () => {
         if (res && res.status === 'synced') syncedCount++;
       }
       console.log(`🔄 Auto-Sincronização por cargos concluída: ${syncedCount} membros alinhados.`);
+      await publishHierarchyToChannel(guild);
     } catch (err) {
       console.error('Erro na Auto-Sincronização:', err.message);
     }
@@ -315,6 +383,7 @@ client.on('interactionCreate', async interaction => {
         .setDescription(`**${synced}** membros foram sincronizados automaticamente com base em seus cargos no Discord.\n\n` + (logs.join('\n').slice(0, 3800) || 'Todos os membros já estavam sincronizados.'))
         .setTimestamp();
 
+      await publishHierarchyToChannel(guild);
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       console.error('Erro no comando /sincronizar:', err);
@@ -323,6 +392,12 @@ client.on('interactionCreate', async interaction => {
   }
 
   if (commandName === 'hierarquia') {
+    await interaction.deferReply();
+    const guild = interaction.guild;
+    if (guild) {
+      await publishHierarchyToChannel(guild);
+    }
+
     const now = new Date();
     const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const dateStr = `Hoje às ${timeStr}`;
@@ -360,7 +435,13 @@ client.on('interactionCreate', async interaction => {
     text += `      「Honra • União • Disciplina」\n`;
     text += `╚══════════════════════════════════════╝`;
 
-    await interaction.reply({ content: text });
+    const embed = new EmbedBuilder()
+      .setColor(0xF59E0B)
+      .setDescription(text)
+      .setImage(BANNER_URL)
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
   }
 });
 
