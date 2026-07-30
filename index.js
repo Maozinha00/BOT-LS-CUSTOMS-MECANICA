@@ -1,10 +1,11 @@
 /**
- * Bot de Sincronização Automática por Cargos e Hierarquia da Facção HUNTERS
+ * Bot de Sincronização Automática e Hierarquia da Facção HUNTERS
  * Requisitos: Node.js v18+ e discord.js v14
- * CORREÇÃO APLICADA:
- * 1. Desduplicação canônica por ID e Nome antes de renderizar a hierarquia.
- * 2. Atualização atômica do array FACTION_PLAYERS ao sincronizar (remove registros antigos antes de inserir o novo cargo).
- * 3. Função unificada de formatação de embed evitando duplicidades entre Líder e Gerente.
+ * 
+ * ALTERAÇÕES REALIZADAS:
+ * 1. REMOVIDA a alteração de apelidos do Discord (member.setNickname removido).
+ * 2. Exibição da hierarquia ajustada para mostrar APENAS o nome do jogador.
+ * 3. Corrigido erro de runtime na função de desduplicação de membros.
  */
 
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
@@ -15,11 +16,7 @@ try {
   console.log('ℹ️ Pacote dotenv não instalado. Usando variáveis de ambiente do sistema.');
 }
 
-if (!process.env.DISCORD_TOKEN && !'DISCORD_TOKEN_AQUI') {
-  console.error('❌ ERRO CRÍTICO: DISCORD_TOKEN não foi encontrado!');
-}
-
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'DISCORD_TOKEN_AQUI';
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'SEU_TOKEN_DISCORD_AQUI';
 const GUILD_ID = process.env.GUILD_ID || 'GUILD_ID_AQUI';
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1515448473246498866';
 const HIERARCHY_CHANNEL_ID = process.env.HIERARCHY_CHANNEL_ID || '1527817862532694026';
@@ -72,9 +69,7 @@ let FACTION_PLAYERS = [
 ];
 
 /**
- * DESDUPLICAÇÃO CANÔNICA INTELIGENTE:
- * Garante que cada ID/Nome seja único e pertença a exatamente 1 cargo.
- * Desduplica nomes equivalentes (ex: Henrique vs Henrique Souza).
+ * DESDUPLICAÇÃO CANÔNICA INTELIGENTE
  */
 function getCanonicalPlayersList(playersArray) {
   const map = new Map();
@@ -82,6 +77,7 @@ function getCanonicalPlayersList(playersArray) {
     if (!player || !player.name) continue;
     const cleanId = (player.id || '').toString().trim();
     const cleanName = player.name.trim();
+    const newLower = cleanName.toLowerCase();
 
     let targetKey = null;
     for (const [key, existing] of map.entries()) {
@@ -89,14 +85,14 @@ function getCanonicalPlayersList(playersArray) {
         targetKey = key;
         break;
       }
-      if (extLower === newLower) {
+      if (existing.name && existing.name.toLowerCase() === newLower) {
         targetKey = key;
         break;
       }
     }
 
     if (!targetKey) {
-      targetKey = cleanId ? `id:${cleanId}` : `name:${cleanName.toLowerCase()}`;
+      targetKey = cleanId ? `id:${cleanId}` : `name:${newLower}`;
     }
 
     const prev = map.get(targetKey);
@@ -112,7 +108,8 @@ function getCanonicalPlayersList(playersArray) {
 }
 
 /**
- * UNIFICAÇÃO DA RENDERIZAÇÃO DA HIERARQUIA
+ * RENDERIZAÇÃO DA HIERARQUIA
+ * Exibe APENAS O NOME do jogador em cada cargo
  */
 function generateHierarchyTextAndEmbed(playersArray) {
   const now = new Date();
@@ -134,7 +131,6 @@ function generateHierarchyTextAndEmbed(playersArray) {
   text += `📅 Atualizado: ${dateStr}\n\n`;
   text += `══════════════════════════════════════\n\n`;
 
-  // Aplica desduplicação rigorosa antes de renderizar
   const cleanList = getCanonicalPlayersList(playersArray);
 
   rolesData.forEach(({ role, title, icon }) => {
@@ -144,7 +140,8 @@ function generateHierarchyTextAndEmbed(playersArray) {
     text += `${icon} ╭─ ${title} 「${countStr}」\n`;
     if (rolePlayers.length > 0) {
       rolePlayers.forEach(p => {
-        text += `┃ ➤ |${role}| ${p.name} | ${p.id}\n`;
+        // Exibe apenas o nome do jogador
+        text += `┃ ➤ ${p.name}\n`;
       });
     }
     text += `╰────────────────────────────\n\n`;
@@ -164,7 +161,7 @@ function generateHierarchyTextAndEmbed(playersArray) {
   return { text, embed };
 }
 
-// Helper para enviar logs em embed
+// Helper para enviar logs
 async function sendLogEmbed(guild, title, description, color = 0x10B981, fields = []) {
   try {
     const channel = guild.channels.cache.get(LOG_CHANNEL_ID) || await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
@@ -179,19 +176,17 @@ async function sendLogEmbed(guild, title, description, color = 0x10B981, fields 
       await channel.send({ embeds: [embed] });
     }
   } catch (err) {
-    console.error('⚠️ Não foi possível enviar log para o canal de logs:', err.message);
+    console.error('⚠️ Erro ao enviar log:', err.message);
   }
 }
 
-// Publica a hierarquia no canal oficial do Discord
+// Publica a hierarquia no canal oficial
 async function publishHierarchyToChannel(guild) {
   try {
     const channel = guild.channels.cache.get(HIERARCHY_CHANNEL_ID) || await guild.channels.fetch(HIERARCHY_CHANNEL_ID).catch(() => null);
     if (!channel || !channel.isTextBased()) return;
 
-    // Atualiza FACTION_PLAYERS limpando duplicatas pendentes
     FACTION_PLAYERS = getCanonicalPlayersList(FACTION_PLAYERS);
-
     const { embed } = generateHierarchyTextAndEmbed(FACTION_PLAYERS);
 
     const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
@@ -202,18 +197,17 @@ async function publishHierarchyToChannel(guild) {
       console.log(`📢 Hierarquia atualizada no canal ${HIERARCHY_CHANNEL_ID}`);
     } else {
       await channel.send({ embeds: [embed] });
-      console.log(`📢 Nova Hierarquia publicada com banner no canal ${HIERARCHY_CHANNEL_ID}`);
+      console.log(`📢 Nova Hierarquia publicada no canal ${HIERARCHY_CHANNEL_ID}`);
     }
   } catch (err) {
-    console.error('⚠️ Não foi possível publicar no canal da hierarquia:', err.message);
+    console.error('⚠️ Erro ao publicar no canal da hierarquia:', err.message);
   }
 }
 
-// Identifica o cargo mais alto do membro por prioridade (ID do Cargo, Nome do Cargo ou Tag no Nickname)
+// Obtém o cargo de facção do membro
 function getMemberFactionRole(member) {
   let highest = null;
 
-  // 1. Verificação por ID do Cargo Mapeado
   for (const [roleId, info] of Object.entries(FACTION_ROLES)) {
     if (member.roles.cache.has(roleId)) {
       if (!highest || info.priority < highest.priority) {
@@ -222,7 +216,6 @@ function getMemberFactionRole(member) {
     }
   }
 
-  // 2. FALLBACK: Busca por Nome do Cargo no Discord (palavra exata do cargo)
   if (!highest && member.roles.cache.size > 0) {
     const roleFallbackList = [
       { names: ['líder', 'lider', 'líderes', 'lideres'], role: 'Líder', priority: 1, icon: '👑' },
@@ -245,70 +238,42 @@ function getMemberFactionRole(member) {
   return highest;
 }
 
-// Sincronização individual com eliminação de registros antigos
+// Sincroniza o membro na lista da hierarquia (SEM MUDAR APELIDO)
 async function syncMemberByRoles(member) {
   if (!member || member.user.bot) return null;
 
   const factionRole = getMemberFactionRole(member);
-  const currentName = member.nickname || member.user.globalName || member.user.username;
-  const matchId = currentName.match(/(d{3,6})/) || member.user.username.match(/(d{3,6})/);
+  const rawName = member.nickname || member.user.globalName || member.user.username;
+  const matchId = rawName.match(/(\d{3,6})/) || member.user.username.match(/(\d{3,6})/);
   const playerId = matchId ? matchId[1] : member.user.id.slice(-5);
 
-  let cleanName = currentName
-    .replace(/|(Líder|Gerente|Elite|Membro|Recruta)|/gi, '')
-    .replace(/d{3,6}/g, '')
+  let cleanName = rawName
+    .replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|/gi, '')
+    .replace(/\d{3,6}/g, '')
     .replace(/[-|]/g, ' ')
-    .replace(/s+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
   if (!cleanName) cleanName = member.user.username;
 
   const normName = cleanName.toLowerCase();
 
   if (factionRole) {
-    const targetNick = `|${factionRole.role}| ${cleanName} | ${playerId}`;
+    // REMOVIDO: setNickname (não altera os nomes no servidor)
 
-    if (member.nickname !== targetNick) {
-      try {
-        await member.setNickname(targetNick);
-      } catch (err) {
-        console.error(`⚠️ Erro ao definir apelido de ${member.user.tag}:`, err.message);
-      }
-    }
-
-    // REMOVE OCORRÊNCIA ANTERIOR DO MESMO JOGADOR (estritamente por ID ou Nome Exato)
     for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
       const p = FACTION_PLAYERS[i];
-      const pNameLower = p.name.toLowerCase();
-      const isNameMatch = pNameLower === normName;
-
-      if ((p.id && p.id === playerId) || isNameMatch) {
+      if ((p.id && p.id === playerId) || p.name.toLowerCase() === normName) {
         FACTION_PLAYERS.splice(i, 1);
       }
     }
 
-    // Insere o único registro com o cargo atualizado
     FACTION_PLAYERS.push({ id: playerId, name: cleanName, role: factionRole.role });
-
-    return { status: 'synced', roleInfo: factionRole, cleanName, playerId, targetNick };
+    return { status: 'synced', roleInfo: factionRole, cleanName, playerId };
   } else {
-    // Membro perdeu cargo de facção -> limpa nickname e remove da hierarquia
-    if (/|(Líder|Gerente|Elite|Membro|Recruta)|/i.test(currentName)) {
-      const cleanNick = currentName.replace(/|(Líder|Gerente|Elite|Membro|Recruta)|s*/gi, '').trim();
-      try {
-        await member.setNickname(cleanNick.length > 0 ? cleanNick : null);
-      } catch (err) {
-        console.error(`Erro ao limpar tag de ${member.user.tag}:`, err.message);
-      }
-    }
-
     let removedPlayer = null;
     for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
       const p = FACTION_PLAYERS[i];
-      const pNameLower = p.name.toLowerCase();
-      const isHenriqueMatch = (pNameLower.startsWith('henrique') && normName.startsWith('henrique'));
-      const isNameMatch = pNameLower === normName || isHenriqueMatch;
-
-      if ((p.id && p.id === playerId) || isNameMatch) {
+      if ((p.id && p.id === playerId) || p.name.toLowerCase() === normName) {
         removedPlayer = FACTION_PLAYERS.splice(i, 1)[0];
       }
     }
@@ -318,27 +283,25 @@ async function syncMemberByRoles(member) {
 }
 
 client.once('ready', async () => {
-  console.log(`✅ Bot Hunters iniciado com sucesso como: ${client.user.tag}`);
-  console.log(`📢 Canal de logs: ${LOG_CHANNEL_ID}`);
+  console.log(`✅ Bot Hunters iniciado como: ${client.user.tag}`);
 
   const commands = [
     new SlashCommandBuilder()
       .setName('sincronizar')
-      .setDescription('Sincroniza automaticamente todos os membros pelos IDs de Cargo')
+      .setDescription('Sincroniza automaticamente a hierarquia pelos cargos')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageNicknames),
     new SlashCommandBuilder()
       .setName('hierarquia')
-      .setDescription('Exibe a hierarquia completa formatada por cargos'),
+      .setDescription('Exibe a hierarquia completa formatada'),
   ];
 
   const rest = new REST().setToken(DISCORD_TOKEN);
   try {
-    console.log('🔄 Registrando comandos Slash...');
     await rest.put(
       Routes.applicationGuildCommands(client.user.id, GUILD_ID),
       { body: commands }
     );
-    console.log('✅ Comandos Slash registrados com sucesso!');
+    console.log('✅ Comandos registrados com sucesso!');
   } catch (err) {
     console.error('❌ Erro ao registrar comandos:', err);
   }
@@ -354,7 +317,7 @@ client.once('ready', async () => {
         const res = await syncMemberByRoles(member);
         if (res && res.status === 'synced') syncedCount++;
       }
-      console.log(`🔄 Auto-Sincronização concluída: ${syncedCount} membros alinhados.`);
+      console.log(`🔄 Auto-Sincronização concluída: ${syncedCount} membros na hierarquia.`);
       await publishHierarchyToChannel(guild);
     } catch (err) {
       console.error('Erro na Auto-Sincronização:', err.message);
@@ -370,7 +333,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const newRoleInfo = getMemberFactionRole(newMember);
 
   if (oldRoleInfo?.roleId !== newRoleInfo?.roleId) {
-    console.log(`⚡ Cargo alterado para ${newMember.user.tag}: ${oldRoleInfo?.role || 'Nenhum'} -> ${newRoleInfo?.role || 'Nenhum'}`);
     const res = await syncMemberByRoles(newMember);
 
     if (res && res.status === 'synced') {
@@ -382,8 +344,6 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
         [
           { name: '👤 Jogador', value: res.cleanName, inline: true },
           { name: '🪪 ID do Jogo', value: `\`${res.playerId}\``, inline: true },
-          { name: '🏷️ Apelido Discord', value: `\`${res.targetNick}\``, inline: false },
-          { name: '📢 Canal de Logs', value: `<#${LOG_CHANNEL_ID}>`, inline: true },
         ]
       );
       await publishHierarchyToChannel(newMember.guild);
@@ -391,7 +351,7 @@ client.on('guildMemberUpdate', async (oldMember, newMember) => {
       await sendLogEmbed(
         newMember.guild,
         '⚠️ Cargo de Facção Removido',
-        `O membro <@${newMember.user.id}> teve seus cargos de facção removidos. Tag limpa e removido do painel.`,
+        `O membro <@${newMember.user.id}> foi removido da hierarquia.`,
         0xEF4444,
         [
           { name: '👤 Jogador', value: res.cleanName, inline: true },
@@ -408,25 +368,23 @@ client.on('guildMemberRemove', async member => {
   const matchId = currentName.match(/\b(\d{3,6})\b/);
   const playerId = matchId ? matchId[1] : null;
 
-  if (playerId) {
+  if (playerId || currentName) {
     const normName = currentName.toLowerCase();
     let removed = null;
     for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
-      if (FACTION_PLAYERS[i].id === playerId || FACTION_PLAYERS[i].name.toLowerCase() === normName) {
+      if ((playerId && FACTION_PLAYERS[i].id === playerId) || FACTION_PLAYERS[i].name.toLowerCase() === normName) {
         removed = FACTION_PLAYERS.splice(i, 1)[0];
       }
     }
 
     if (removed) {
-      console.log(`🚪 Membro ID ${playerId} saiu do servidor. Removido da hierarquia.`);
       await sendLogEmbed(
         member.guild,
         '🚪 Membro Saiu do Servidor',
-        `O jogador **${removed.name}** (ID: ${removed.id}) saiu do servidor do Discord.`,
+        `O jogador **${removed.name}** saiu do servidor.`,
         0xF59E0B,
         [
           { name: '👤 Jogador', value: removed.name, inline: true },
-          { name: '🪪 ID', value: `\`${removed.id}\``, inline: true },
           { name: '🛡️ Cargo Anterior', value: removed.role, inline: true },
         ]
       );
@@ -447,29 +405,25 @@ client.on('interactionCreate', async interaction => {
       const guild = interaction.guild;
       const members = await guild.members.fetch();
       let synced = 0;
-      let logs = [];
 
       for (const [_, member] of members) {
         const res = await syncMemberByRoles(member);
-        if (res && res.status === 'synced') {
-          synced++;
-          logs.push(`✅ **${res.cleanName}** (ID: \`${res.playerId}\`): Cargo **${res.roleInfo.role}**`);
-        }
+        if (res && res.status === 'synced') synced++;
       }
 
       await publishHierarchyToChannel(guild);
 
       const embed = new EmbedBuilder()
-        .setTitle('🔄 Sincronização por Cargos Concluída')
+        .setTitle('🔄 Sincronização Concluída')
         .setThumbnail(BANNER_URL)
         .setColor(0x10B981)
-        .setDescription(`**${synced}** membros foram sincronizados com sucesso.\n\n` + (logs.join('\n').slice(0, 3800) || 'Todos os membros já estavam alinhados.'))
+        .setDescription(`**${synced}** membros foram sincronizados na hierarquia com sucesso.`)
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
     } catch (err) {
       console.error('Erro no comando /sincronizar:', err);
-      await interaction.editReply({ content: '❌ Ocorreu um erro ao sincronizar os membros.' });
+      await interaction.editReply({ content: '❌ Ocorreu um erro ao sincronizar.' });
     }
   }
 
@@ -487,12 +441,7 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-process.on('unhandledRejection', error => {
-  console.error('⚠️ Erro de Rejeição não tratada:', error);
-});
-
-process.on('uncaughtException', error => {
-  console.error('⚠️ Exceção não capturada:', error);
-});
+process.on('unhandledRejection', error => console.error('⚠️ Rejeição:', error));
+process.on('uncaughtException', error => console.error('⚠️ Exceção:', error));
 
 client.login(DISCORD_TOKEN);
