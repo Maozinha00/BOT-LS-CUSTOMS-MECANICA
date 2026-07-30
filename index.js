@@ -89,9 +89,7 @@ function getCanonicalPlayersList(playersArray) {
         targetKey = key;
         break;
       }
-      const extLower = existing.name.toLowerCase();
-      const newLower = cleanName.toLowerCase();
-      if (extLower === newLower || (extLower.startsWith('henrique') && newLower.startsWith('henrique'))) {
+      if (extLower === newLower) {
         targetKey = key;
         break;
       }
@@ -227,31 +225,21 @@ function getMemberFactionRole(member) {
   // 2. FALLBACK: Busca por Nome do Cargo no Discord (palavra exata do cargo)
   if (!highest && member.roles.cache.size > 0) {
     const roleFallbackList = [
-      { regex: /líder|lider/i, role: 'Líder', priority: 1, icon: '👑' },
-      { regex: /gerente/i, role: 'Gerente', priority: 2, icon: '🛡️' },
-      { regex: /elite/i, role: 'Elite', priority: 3, icon: '⚡' },
-      { regex: /membro/i, role: 'Membro', priority: 4, icon: '⚔️' },
-      { regex: /recruta/i, role: 'Recruta', priority: 5, icon: '🔰' },
+      { names: ['líder', 'lider', 'líderes', 'lideres'], role: 'Líder', priority: 1, icon: '👑' },
+      { names: ['gerente', 'gerentes'], role: 'Gerente', priority: 2, icon: '🛡️' },
+      { names: ['elite'], role: 'Elite', priority: 3, icon: '⚡' },
+      { names: ['membro', 'membros'], role: 'Membro', priority: 4, icon: '⚔️' },
+      { names: ['recruta', 'recrutas'], role: 'Recruta', priority: 5, icon: '🔰' },
     ];
 
     for (const r of roleFallbackList) {
-      const foundRole = member.roles.cache.find(role => r.regex.test(role.name));
+      const foundRole = member.roles.cache.find(role => r.names.includes(role.name.trim().toLowerCase()));
       if (foundRole) {
         if (!highest || r.priority < highest.priority) {
           highest = { roleId: foundRole.id, role: r.role, priority: r.priority, icon: r.icon };
         }
       }
     }
-  }
-
-  // 3. FALLBACK: Busca por Tag de Cargo no Apelido do Discord (|Elite|, |Líder|, etc.)
-  if (!highest) {
-    const nick = member.nickname || member.user.globalName || member.user.username;
-    if (/|Elite|/i.test(nick)) highest = { roleId: 'fallback', role: 'Elite', priority: 3, icon: '⚡' };
-    else if (/|Líder|||Lider|/i.test(nick)) highest = { roleId: 'fallback', role: 'Líder', priority: 1, icon: '👑' };
-    else if (/|Gerente|/i.test(nick)) highest = { roleId: 'fallback', role: 'Gerente', priority: 2, icon: '🛡️' };
-    else if (/|Membro|/i.test(nick)) highest = { roleId: 'fallback', role: 'Membro', priority: 4, icon: '⚔️' };
-    else if (/|Recruta|/i.test(nick)) highest = { roleId: 'fallback', role: 'Recruta', priority: 5, icon: '🔰' };
   }
 
   return highest;
@@ -287,12 +275,11 @@ async function syncMemberByRoles(member) {
       }
     }
 
-    // REMOVE QUALQUER OCORRÊNCIA ANTERIOR DO JOGADOR (impede duplicar Henrique / Henrique Souza)
+    // REMOVE OCORRÊNCIA ANTERIOR DO MESMO JOGADOR (estritamente por ID ou Nome Exato)
     for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
       const p = FACTION_PLAYERS[i];
       const pNameLower = p.name.toLowerCase();
-      const isHenriqueMatch = (pNameLower.startsWith('henrique') && normName.startsWith('henrique'));
-      const isNameMatch = pNameLower === normName || isHenriqueMatch;
+      const isNameMatch = pNameLower === normName;
 
       if ((p.id && p.id === playerId) || isNameMatch) {
         FACTION_PLAYERS.splice(i, 1);
