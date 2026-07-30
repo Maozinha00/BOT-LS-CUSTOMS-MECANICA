@@ -49,8 +49,6 @@ let FACTION_PLAYERS = [
   { id: '16774', name: 'AURORA Souza', role: 'Gerente' },
   { id: '32646', name: 'vsantos nascimento', role: 'Gerente' },
   { id: '26282', name: 'lucas gustavo', role: 'Gerente' },
-  { id: '28910', name: 'Pedrinho Hunter', role: 'Elite' },
-  { id: '31045', name: 'Gamer Elite', role: 'Elite' },
   { id: '30897', name: 'kau amarante', role: 'Membro' },
   { id: '36888', name: 'Muniz zeraaa', role: 'Membro' },
   { id: '36842', name: 'wakd vivente', role: 'Recruta' },
@@ -226,19 +224,18 @@ function getMemberFactionRole(member) {
     }
   }
 
-  // 2. FALLBACK: Busca por Nome do Cargo no Discord (garante puxar Elite mesmo com ID diferente)
+  // 2. FALLBACK: Busca por Nome do Cargo no Discord (palavra exata do cargo)
   if (!highest && member.roles.cache.size > 0) {
     const roleFallbackList = [
-      { name: 'líder', role: 'Líder', priority: 1, icon: '👑' },
-      { name: 'lider', role: 'Líder', priority: 1, icon: '👑' },
-      { name: 'gerente', role: 'Gerente', priority: 2, icon: '🛡️' },
-      { name: 'elite', role: 'Elite', priority: 3, icon: '⚡' },
-      { name: 'membro', role: 'Membro', priority: 4, icon: '⚔️' },
-      { name: 'recruta', role: 'Recruta', priority: 5, icon: '🔰' },
+      { regex: /líder|lider/i, role: 'Líder', priority: 1, icon: '👑' },
+      { regex: /gerente/i, role: 'Gerente', priority: 2, icon: '🛡️' },
+      { regex: /elite/i, role: 'Elite', priority: 3, icon: '⚡' },
+      { regex: /membro/i, role: 'Membro', priority: 4, icon: '⚔️' },
+      { regex: /recruta/i, role: 'Recruta', priority: 5, icon: '🔰' },
     ];
 
     for (const r of roleFallbackList) {
-      const foundRole = member.roles.cache.find(role => role.name.toLowerCase().includes(r.name));
+      const foundRole = member.roles.cache.find(role => r.regex.test(role.name));
       if (foundRole) {
         if (!highest || r.priority < highest.priority) {
           highest = { roleId: foundRole.id, role: r.role, priority: r.priority, icon: r.icon };
@@ -266,14 +263,14 @@ async function syncMemberByRoles(member) {
 
   const factionRole = getMemberFactionRole(member);
   const currentName = member.nickname || member.user.globalName || member.user.username;
-  const matchId = currentName.match(/\b(\d{3,6})\b/) || member.user.username.match(/\b(\d{3,6})\b/);
+  const matchId = currentName.match(/(d{3,6})/) || member.user.username.match(/(d{3,6})/);
   const playerId = matchId ? matchId[1] : member.user.id.slice(-5);
 
   let cleanName = currentName
-    .replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|/gi, '')
-    .replace(/\b\d{3,6}\b/g, '')
+    .replace(/|(Líder|Gerente|Elite|Membro|Recruta)|/gi, '')
+    .replace(/d{3,6}/g, '')
     .replace(/[-|]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/s+/g, ' ')
     .trim();
   if (!cleanName) cleanName = member.user.username;
 
@@ -308,8 +305,8 @@ async function syncMemberByRoles(member) {
     return { status: 'synced', roleInfo: factionRole, cleanName, playerId, targetNick };
   } else {
     // Membro perdeu cargo de facção -> limpa nickname e remove da hierarquia
-    if (/\|(Líder|Gerente|Elite|Membro|Recruta)\|/i.test(currentName)) {
-      const cleanNick = currentName.replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|\s*/gi, '').trim();
+    if (/|(Líder|Gerente|Elite|Membro|Recruta)|/i.test(currentName)) {
+      const cleanNick = currentName.replace(/|(Líder|Gerente|Elite|Membro|Recruta)|s*/gi, '').trim();
       try {
         await member.setNickname(cleanNick.length > 0 ? cleanNick : null);
       } catch (err) {
