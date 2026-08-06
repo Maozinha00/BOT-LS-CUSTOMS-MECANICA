@@ -1,34 +1,25 @@
 /**
- * Bot de Sincronização Automática e Hierarquia da Facção HUNTERS
- * Requisitos: Node.js v18+ e discord.js v14
- * 
- * ALTERAÇÕES REALIZADAS:
- * 1. REMOVIDA a alteração de apelidos do Discord (member.setNickname removido).
- * 2. Exibição da hierarquia ajustada para mostrar APENAS o nome do jogador.
- * 3. Corrigido erro de runtime na função de desduplicação de membros.
+ * Bot HUNTERS - Sincronização Dinâmica por Cargos
+ * Quando um cargo de hierarquia é removido, a TAG também é removida.
  */
 
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
 
-try {
-  require('dotenv').config();
-} catch (err) {
-  console.log('ℹ️ Pacote dotenv não instalado. Usando variáveis de ambiente do sistema.');
-}
+// ================== CONFIGURAÇÕES DE IDS (AJUSTE AQUI) ==================
+const TOKEN = 'SEU_TOKEN_AQUI';
+const GUILD_ID = 'ID_DO_SERVIDOR';
+const LOG_CHANNEL_ID = '1515448473246498866'; 
+const HIERARCHY_CHANNEL_ID = '1527817862532694026';
+const TAG_ROLE_ID = 'ID_DO_CARGO_DA_TAG'; // O cargo da TAG (ex: [HUNTERS])
+const BANNER_URL = 'https://i.imgur.com/pf92vzV.jpeg';
 
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN || 'SEU_TOKEN_DISCORD_AQUI';
-const GUILD_ID = process.env.GUILD_ID || 'GUILD_ID_AQUI';
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID || '1515448473246498866';
-const HIERARCHY_CHANNEL_ID = process.env.HIERARCHY_CHANNEL_ID || '1527817862532694026';
-const BANNER_URL = process.env.BANNER_URL || 'https://i.imgur.com/pf92vzV.jpeg';
-
-// Mapeamento de Cargos e Prioridades por ID no Discord
+// Mapeamento dos Cargos de Hierarquia
 const FACTION_ROLES = {
-  '1527848364496912404': { role: 'Líder', priority: 1, icon: '👑' },
-  '1523277774436171796': { role: 'Gerente', priority: 2, icon: '🛡️' },
-  '1527812806873972838': { role: 'Elite', priority: 3, icon: '⚡' },
-  '1528075981078663259': { role: 'Membro', priority: 4, icon: '⚔️' },
-  '1515125826780135485': { role: 'Recruta', priority: 5, icon: '🔰' },
+  '1527848364496912404': { name: 'Líder', priority: 1, icon: '👑' },
+  '1523277774436171796': { name: 'Gerente', priority: 2, icon: '🛡️' },
+  '1527812806873972838': { name: 'Elite', priority: 3, icon: '⚡' },
+  '1528075981078663259': { name: 'Membro', priority: 4, icon: '⚔️' },
+  '1515125826780135485': { name: 'Recruta', priority: 5, icon: '🔰' },
 };
 
 const client = new Client({
@@ -36,412 +27,133 @@ const client = new Client({
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
   ],
 });
 
-// Lista Base de Jogadores da Facção
-let FACTION_PLAYERS = [
-  { id: '16090', name: 'Henrique Souza', role: 'Líder' },
-  { id: '16774', name: 'AURORA Souza', role: 'Gerente' },
-  { id: '32646', name: 'vsantos nascimento', role: 'Gerente' },
-  { id: '26282', name: 'lucas gustavo', role: 'Gerente' },
-  { id: '30897', name: 'kau amarante', role: 'Membro' },
-  { id: '36888', name: 'Muniz zeraaa', role: 'Membro' },
-  { id: '36842', name: 'wakd vivente', role: 'Recruta' },
-  { id: '160', name: 'Rafael junior', role: 'Recruta' },
-  { id: '33779', name: 'Luiz inacio silva lula', role: 'Recruta' },
-  { id: '34013', name: 'luck silva', role: 'Recruta' },
-  { id: '26051', name: 'nato silva', role: 'Recruta' },
-  { id: '35860', name: 'NEGOT RYAN', role: 'Recruta' },
-  { id: '10128', name: 'Kayke Ryan', role: 'Recruta' },
-  { id: '36876', name: 'lenon silva', role: 'Recruta' },
-  { id: '8598', name: 'rafael silva', role: 'Recruta' },
-  { id: '33662', name: 'PEDRIN SILVA', role: 'Recruta' },
-  { id: '36250', name: 'Daniel Bolelli', role: 'Recruta' },
-  { id: '31194', name: 'cria contrs zumbi', role: 'Recruta' },
-  { id: '35720', name: 'Gibby Mafiore', role: 'Recruta' },
-  { id: '35848', name: 'Porquinho da silvar', role: 'Recruta' },
-  { id: '13999', name: 'Jacú do Mato', role: 'Recruta' },
-  { id: '35751', name: 'Vitor PQD', role: 'Recruta' },
-  { id: '11249', name: 'Cleito silva', role: 'Recruta' },
-  { id: '30527', name: 'uaiden covert', role: 'Recruta' },
-];
-
 /**
- * DESDUPLICAÇÃO CANÔNICA INTELIGENTE
+ * Função para atualizar a mensagem de hierarquia no canal
  */
-function getCanonicalPlayersList(playersArray) {
-  const map = new Map();
-  for (const player of playersArray) {
-    if (!player || !player.name) continue;
-    const cleanId = (player.id || '').toString().trim();
-    const cleanName = player.name.trim();
-    const newLower = cleanName.toLowerCase();
+async function updateHierarchyMessage(guild) {
+  const channel = guild.channels.cache.get(HIERARCHY_CHANNEL_ID);
+  if (!channel) return;
 
-    let targetKey = null;
-    for (const [key, existing] of map.entries()) {
-      if (cleanId && existing.id === cleanId) {
-        targetKey = key;
-        break;
-      }
-      if (existing.name && existing.name.toLowerCase() === newLower) {
-        targetKey = key;
-        break;
-      }
-    }
-
-    if (!targetKey) {
-      targetKey = cleanId ? `id:${cleanId}` : `name:${newLower}`;
-    }
-
-    const prev = map.get(targetKey);
-    const bestName = prev && prev.name.length > cleanName.length ? prev.name : cleanName;
-
-    map.set(targetKey, {
-      id: cleanId || (prev ? prev.id : ''),
-      name: bestName,
-      role: player.role
-    });
-  }
-  return Array.from(map.values());
-}
-
-/**
- * RENDERIZAÇÃO DA HIERARQUIA
- * Exibe APENAS O NOME do jogador em cada cargo
- */
-function generateHierarchyTextAndEmbed(playersArray) {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const dateStr = `Hoje às ${timeStr}`;
+  // Busca todos os membros para garantir dados atualizados
+  await guild.members.fetch();
 
   const rolesData = [
-    { role: 'Líder', title: 'LÍDERES', icon: '👑' },
-    { role: 'Gerente', title: 'GERENTES', icon: '🛡️' },
-    { role: 'Elite', title: 'ELITE', icon: '⚡' },
-    { role: 'Membro', title: 'MEMBROS', icon: '⚔️' },
-    { role: 'Recruta', title: 'RECRUTAS', icon: '🔰' },
+    { label: 'Líder', title: 'LÍDERES', icon: '👑' },
+    { label: 'Gerente', title: 'GERENTES', icon: '🛡️' },
+    { label: 'Elite', title: 'ELITE', icon: '⚡' },
+    { label: 'Membro', title: 'MEMBROS', icon: '⚔️' },
+    { label: 'Recruta', title: 'RECRUTAS', icon: '🔰' },
   ];
 
   let text = `╔══════════════════════════════════════╗\n`;
   text += `           🐺👑 H U N T E R S 👑🐺\n`;
   text += `        『 HIERARQUIA OFICIAL 』\n`;
   text += `╚══════════════════════════════════════╝\n\n`;
-  text += `📅 Atualizado: ${dateStr}\n\n`;
-  text += `══════════════════════════════════════\n\n`;
 
-  const cleanList = getCanonicalPlayersList(playersArray);
+  rolesData.forEach(roleInfo => {
+    // Encontra todos os membros que têm esse cargo específico
+    const membersWithRole = guild.members.cache.filter(m => {
+        // Verifica se o ID do cargo daquela hierarquia está nos cargos do membro
+        const roleId = Object.keys(FACTION_ROLES).find(id => FACTION_ROLES[id].name === roleInfo.label);
+        return m.roles.cache.has(roleId);
+    });
 
-  rolesData.forEach(({ role, title, icon }) => {
-    const rolePlayers = cleanList.filter(p => p.role === role);
-    const countStr = String(rolePlayers.length).padStart(2, '0');
+    const count = String(membersWithRole.size).padStart(2, '0');
+    text += `${roleInfo.icon} ╭─ ${roleInfo.title} 「${count}」\n`;
 
-    text += `${icon} ╭─ ${title} 「${countStr}」\n`;
-    if (rolePlayers.length > 0) {
-      rolePlayers.forEach(p => {
-        // Exibe apenas o nome do jogador
-        text += `┃ ➤ ${p.name}\n`;
+    if (membersWithRole.size > 0) {
+      membersWithRole.forEach(m => {
+        const displayName = m.nickname || m.user.globalName || m.user.username;
+        text += `┃ ➤ ${displayName}\n`;
       });
+    } else {
+      text += `┃ ➤ _Vago_\n`;
     }
     text += `╰────────────────────────────\n\n`;
   });
-
-  text += `╔══════════════════════════════════════╗\n`;
-  text += `        🐺 FAMÍLIA HUNTERS FIVEZ 🐺\n`;
-  text += `      「Honra • União • Disciplina」\n`;
-  text += `╚══════════════════════════════════════╝`;
 
   const embed = new EmbedBuilder()
     .setColor(0xF59E0B)
     .setDescription(text)
     .setImage(BANNER_URL)
-    .setTimestamp();
+    .setTimestamp()
+    .setFooter({ text: 'Sincronização Automática HUNTERS' });
 
-  return { text, embed };
-}
+  // Busca mensagens antigas do bot no canal para editar em vez de criar nova
+  const messages = await channel.messages.fetch({ limit: 10 });
+  const oldMsg = messages.find(msg => msg.author.id === client.user.id);
 
-// Helper para enviar logs
-async function sendLogEmbed(guild, title, description, color = 0x10B981, fields = []) {
-  try {
-    const channel = guild.channels.cache.get(LOG_CHANNEL_ID) || await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-    if (channel && channel.isTextBased()) {
-      const embed = new EmbedBuilder()
-        .setTitle(title)
-        .setThumbnail(BANNER_URL)
-        .setColor(color)
-        .setDescription(description)
-        .addFields(fields)
-        .setTimestamp();
-      await channel.send({ embeds: [embed] });
-    }
-  } catch (err) {
-    console.error('⚠️ Erro ao enviar log:', err.message);
-  }
-}
-
-// Publica a hierarquia no canal oficial
-async function publishHierarchyToChannel(guild) {
-  try {
-    const channel = guild.channels.cache.get(HIERARCHY_CHANNEL_ID) || await guild.channels.fetch(HIERARCHY_CHANNEL_ID).catch(() => null);
-    if (!channel || !channel.isTextBased()) return;
-
-    FACTION_PLAYERS = getCanonicalPlayersList(FACTION_PLAYERS);
-    const { embed } = generateHierarchyTextAndEmbed(FACTION_PLAYERS);
-
-    const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
-    const existingMsg = messages ? messages.find(m => m.author.id === client.user.id) : null;
-
-    if (existingMsg) {
-      await existingMsg.edit({ embeds: [embed] });
-      console.log(`📢 Hierarquia atualizada no canal ${HIERARCHY_CHANNEL_ID}`);
-    } else {
-      await channel.send({ embeds: [embed] });
-      console.log(`📢 Nova Hierarquia publicada no canal ${HIERARCHY_CHANNEL_ID}`);
-    }
-  } catch (err) {
-    console.error('⚠️ Erro ao publicar no canal da hierarquia:', err.message);
-  }
-}
-
-// Obtém o cargo de facção do membro
-function getMemberFactionRole(member) {
-  let highest = null;
-
-  for (const [roleId, info] of Object.entries(FACTION_ROLES)) {
-    if (member.roles.cache.has(roleId)) {
-      if (!highest || info.priority < highest.priority) {
-        highest = { roleId, ...info };
-      }
-    }
-  }
-
-  if (!highest && member.roles.cache.size > 0) {
-    const roleFallbackList = [
-      { names: ['líder', 'lider', 'líderes', 'lideres'], role: 'Líder', priority: 1, icon: '👑' },
-      { names: ['gerente', 'gerentes'], role: 'Gerente', priority: 2, icon: '🛡️' },
-      { names: ['elite'], role: 'Elite', priority: 3, icon: '⚡' },
-      { names: ['membro', 'membros'], role: 'Membro', priority: 4, icon: '⚔️' },
-      { names: ['recruta', 'recrutas'], role: 'Recruta', priority: 5, icon: '🔰' },
-    ];
-
-    for (const r of roleFallbackList) {
-      const foundRole = member.roles.cache.find(role => r.names.includes(role.name.trim().toLowerCase()));
-      if (foundRole) {
-        if (!highest || r.priority < highest.priority) {
-          highest = { roleId: foundRole.id, role: r.role, priority: r.priority, icon: r.icon };
-        }
-      }
-    }
-  }
-
-  return highest;
-}
-
-// Sincroniza o membro na lista da hierarquia (SEM MUDAR APELIDO)
-async function syncMemberByRoles(member) {
-  if (!member || member.user.bot) return null;
-
-  const factionRole = getMemberFactionRole(member);
-  const rawName = member.nickname || member.user.globalName || member.user.username;
-  const matchId = rawName.match(/(\d{3,6})/) || member.user.username.match(/(\d{3,6})/);
-  const playerId = matchId ? matchId[1] : member.user.id.slice(-5);
-
-  let cleanName = rawName
-    .replace(/\|(Líder|Gerente|Elite|Membro|Recruta)\|/gi, '')
-    .replace(/\d{3,6}/g, '')
-    .replace(/[-|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleanName) cleanName = member.user.username;
-
-  const normName = cleanName.toLowerCase();
-
-  if (factionRole) {
-    // REMOVIDO: setNickname (não altera os nomes no servidor)
-
-    for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
-      const p = FACTION_PLAYERS[i];
-      if ((p.id && p.id === playerId) || p.name.toLowerCase() === normName) {
-        FACTION_PLAYERS.splice(i, 1);
-      }
-    }
-
-    FACTION_PLAYERS.push({ id: playerId, name: cleanName, role: factionRole.role });
-    return { status: 'synced', roleInfo: factionRole, cleanName, playerId };
+  if (oldMsg) {
+    await oldMsg.edit({ embeds: [embed] });
   } else {
-    let removedPlayer = null;
-    for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
-      const p = FACTION_PLAYERS[i];
-      if ((p.id && p.id === playerId) || p.name.toLowerCase() === normName) {
-        removedPlayer = FACTION_PLAYERS.splice(i, 1)[0];
-      }
-    }
-
-    return { status: 'removed', removedPlayer, cleanName, playerId };
+    await channel.send({ embeds: [embed] });
   }
 }
 
+// EVENTO: Quando o bot liga
 client.once('ready', async () => {
-  console.log(`✅ Bot Hunters iniciado como: ${client.user.tag}`);
+  console.log(`✅ Bot ${client.user.tag} está online!`);
 
-  const commands = [
-    new SlashCommandBuilder()
-      .setName('sincronizar')
-      .setDescription('Sincroniza automaticamente a hierarquia pelos cargos')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageNicknames),
-    new SlashCommandBuilder()
-      .setName('hierarquia')
-      .setDescription('Exibe a hierarquia completa formatada'),
-  ];
-
-  const rest = new REST().setToken(DISCORD_TOKEN);
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(client.user.id, GUILD_ID),
-      { body: commands }
-    );
-    console.log('✅ Comandos registrados com sucesso!');
-  } catch (err) {
-    console.error('❌ Erro ao registrar comandos:', err);
-  }
-
-  const autoSyncProcess = async () => {
-    try {
-      const guild = client.guilds.cache.get(GUILD_ID) || client.guilds.cache.first();
-      if (!guild) return;
-      const members = await guild.members.fetch();
-      let syncedCount = 0;
-
-      for (const [_, member] of members) {
-        const res = await syncMemberByRoles(member);
-        if (res && res.status === 'synced') syncedCount++;
-      }
-      console.log(`🔄 Auto-Sincronização concluída: ${syncedCount} membros na hierarquia.`);
-      await publishHierarchyToChannel(guild);
-    } catch (err) {
-      console.error('Erro na Auto-Sincronização:', err.message);
-    }
-  };
-
-  await autoSyncProcess();
-  setInterval(autoSyncProcess, 10 * 60 * 1000);
+  const guild = client.guilds.cache.get(GUILD_ID);
+  if (guild) await updateHierarchyMessage(guild);
 });
 
+// EVENTO PRINCIPAL: Monitora mudança de cargos
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
-  const oldRoleInfo = getMemberFactionRole(oldMember);
-  const newRoleInfo = getMemberFactionRole(newMember);
+  const guild = newMember.guild;
+  
+  // IDs dos cargos de hierarquia configurados
+  const hierarchyRoleIds = Object.keys(FACTION_ROLES);
 
-  if (oldRoleInfo?.roleId !== newRoleInfo?.roleId) {
-    const res = await syncMemberByRoles(newMember);
+  // Verifica se o membro tem algum cargo de hierarquia agora
+  const hasHierarchyNow = hierarchyRoleIds.some(id => newMember.roles.cache.has(id));
+  // Verifica se o membro tinha algum cargo de hierarquia antes
+  const hadHierarchyBefore = hierarchyRoleIds.some(id => oldMember.roles.cache.has(id));
 
-    if (res && res.status === 'synced') {
-      await sendLogEmbed(
-        newMember.guild,
-        `👑 Cargo Sincronizado: ${res.roleInfo.role}`,
-        `O membro <@${newMember.user.id}> teve o cargo **${res.roleInfo.role}** ativado e foi atualizado na hierarquia!`,
-        0x10B981,
-        [
-          { name: '👤 Jogador', value: res.cleanName, inline: true },
-          { name: '🪪 ID do Jogo', value: `\`${res.playerId}\``, inline: true },
-        ]
-      );
-      await publishHierarchyToChannel(newMember.guild);
-    } else if (res && res.status === 'removed') {
-      await sendLogEmbed(
-        newMember.guild,
-        '⚠️ Cargo de Facção Removido',
-        `O membro <@${newMember.user.id}> foi removido da hierarquia.`,
-        0xEF4444,
-        [
-          { name: '👤 Jogador', value: res.cleanName, inline: true },
-          { name: '🪪 ID do Jogo', value: `\`${res.playerId}\``, inline: true },
-        ]
-      );
-      await publishHierarchyToChannel(newMember.guild);
+  // CASO 1: O cargo de hierarquia foi REMOVIDO
+  if (hadHierarchyBefore && !hasHierarchyNow) {
+    // Se ele ainda tiver a TAG, nós removemos
+    if (newMember.roles.cache.has(TAG_ROLE_ID)) {
+      try {
+        await newMember.roles.remove(TAG_ROLE_ID);
+        
+        // Log de remoção
+        const logChan = guild.channels.cache.get(LOG_CHANNEL_ID);
+        if (logChan) {
+          logChan.send({
+            embeds: [new EmbedBuilder()
+              .setTitle("⚠️ Tag Removida")
+              .setDescription(`O membro **${newMember.user.tag}** perdeu seu cargo de facção, portanto a TAG foi removida automaticamente.`)
+              .setColor(0xEF4444)
+              .setTimestamp()]
+          });
+        }
+      } catch (err) {
+        console.error(`Erro ao remover tag de ${newMember.user.tag}: Cargo do bot está abaixo do cargo da tag.`);
+      }
     }
+  }
+
+  // CASO 2: O cargo de hierarquia foi ADICIONADO
+  if (!hadHierarchyBefore && hasHierarchyNow) {
+    // Se ele não tiver a TAG, nós adicionamos
+    if (!newMember.roles.cache.has(TAG_ROLE_ID)) {
+      await newMember.roles.add(TAG_ROLE_ID).catch(() => null);
+    }
+  }
+
+  // Atualiza a lista visual independente do que aconteceu
+  if (hadHierarchyBefore !== hasHierarchyNow) {
+    await updateHierarchyMessage(guild);
   }
 });
 
+// Evento para quando alguém sai do servidor
 client.on('guildMemberRemove', async member => {
-  const currentName = member.nickname || member.user.globalName || member.user.username;
-  const matchId = currentName.match(/\b(\d{3,6})\b/);
-  const playerId = matchId ? matchId[1] : null;
-
-  if (playerId || currentName) {
-    const normName = currentName.toLowerCase();
-    let removed = null;
-    for (let i = FACTION_PLAYERS.length - 1; i >= 0; i--) {
-      if ((playerId && FACTION_PLAYERS[i].id === playerId) || FACTION_PLAYERS[i].name.toLowerCase() === normName) {
-        removed = FACTION_PLAYERS.splice(i, 1)[0];
-      }
-    }
-
-    if (removed) {
-      await sendLogEmbed(
-        member.guild,
-        '🚪 Membro Saiu do Servidor',
-        `O jogador **${removed.name}** saiu do servidor.`,
-        0xF59E0B,
-        [
-          { name: '👤 Jogador', value: removed.name, inline: true },
-          { name: '🛡️ Cargo Anterior', value: removed.role, inline: true },
-        ]
-      );
-      await publishHierarchyToChannel(member.guild);
-    }
-  }
+  await updateHierarchyMessage(member.guild);
 });
 
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isChatInputCommand()) return;
-
-  const { commandName } = interaction;
-
-  if (commandName === 'sincronizar') {
-    await interaction.deferReply({ ephemeral: true });
-
-    try {
-      const guild = interaction.guild;
-      const members = await guild.members.fetch();
-      let synced = 0;
-
-      for (const [_, member] of members) {
-        const res = await syncMemberByRoles(member);
-        if (res && res.status === 'synced') synced++;
-      }
-
-      await publishHierarchyToChannel(guild);
-
-      const embed = new EmbedBuilder()
-        .setTitle('🔄 Sincronização Concluída')
-        .setThumbnail(BANNER_URL)
-        .setColor(0x10B981)
-        .setDescription(`**${synced}** membros foram sincronizados na hierarquia com sucesso.`)
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
-    } catch (err) {
-      console.error('Erro no comando /sincronizar:', err);
-      await interaction.editReply({ content: '❌ Ocorreu um erro ao sincronizar.' });
-    }
-  }
-
-  if (commandName === 'hierarquia') {
-    await interaction.deferReply();
-    const guild = interaction.guild;
-    if (guild) {
-      await publishHierarchyToChannel(guild);
-    }
-
-    FACTION_PLAYERS = getCanonicalPlayersList(FACTION_PLAYERS);
-    const { embed } = generateHierarchyTextAndEmbed(FACTION_PLAYERS);
-
-    await interaction.editReply({ embeds: [embed] });
-  }
-});
-
-process.on('unhandledRejection', error => console.error('⚠️ Rejeição:', error));
-process.on('uncaughtException', error => console.error('⚠️ Exceção:', error));
-
-client.login(DISCORD_TOKEN);
+client.login(TOKEN);
