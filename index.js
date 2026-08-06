@@ -1,25 +1,27 @@
 /**
- * Bot HUNTERS - Sincronização Dinâmica por Cargos
- * Quando um cargo de hierarquia é removido, a TAG também é removida.
+ * Bot HUNTERS - Sincronização por Variáveis de Ambiente
+ * Retira a tag automaticamente ao perder cargo de hierarquia.
  */
 
-const { Client, GatewayIntentBits, EmbedBuilder, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 
-// ================== CONFIGURAÇÕES DE IDS (AJUSTE AQUI) ==================
-const TOKEN = 'SEU_TOKEN_AQUI';
-const GUILD_ID = 'ID_DO_SERVIDOR';
-const LOG_CHANNEL_ID = '1515448473246498866'; 
-const HIERARCHY_CHANNEL_ID = '1527817862532694026';
-const TAG_ROLE_ID = 'ID_DO_CARGO_DA_TAG'; // O cargo da TAG (ex: [HUNTERS])
-const BANNER_URL = 'https://i.imgur.com/pf92vzV.jpeg';
+// Configurações Gerais
+const CONFIG = {
+  TOKEN: process.env.DISCORD_TOKEN,
+  GUILD_ID: process.env.GUILD_ID,
+  TAG_ROLE_ID: process.env.TAG_ROLE_ID, // ID do cargo da TAG (ex: [HUNTERS])
+  LOG_CHANNEL: process.env.LOG_CHANNEL_ID || '1515448473246498866',
+  HIERARCHY_CHANNEL: process.env.HIERARCHY_CHANNEL_ID || '1527817862532694026',
+  BANNER: process.env.BANNER_URL || 'https://i.imgur.com/pf92vzV.jpeg'
+};
 
-// Mapeamento dos Cargos de Hierarquia
+// Mapeamento usando as variáveis da sua imagem
 const FACTION_ROLES = {
-  '1527848364496912404': { name: 'Líder', priority: 1, icon: '👑' },
-  '1523277774436171796': { name: 'Gerente', priority: 2, icon: '🛡️' },
-  '1527812806873972838': { name: 'Elite', priority: 3, icon: '⚡' },
-  '1528075981078663259': { name: 'Membro', priority: 4, icon: '⚔️' },
-  '1515125826780135485': { name: 'Recruta', priority: 5, icon: '🔰' },
+  [process.env.ROLE_LIDER_ID]: { name: 'Líder', priority: 1, icon: '👑' },
+  [process.env.ROLE_GERENTE_ID]: { name: 'Gerente', priority: 2, icon: '🛡️' },
+  [process.env.ROLE_ELITE_ID]: { name: 'Elite', priority: 3, icon: '⚡' },
+  [process.env.ROLE_MEMBROS_ID]: { name: 'Membro', priority: 4, icon: '⚔️' },
+  [process.env.ROLE_RECRUTA_ID]: { name: 'Recruta', priority: 5, icon: '🔰' },
 };
 
 const client = new Client({
@@ -31,129 +33,109 @@ const client = new Client({
 });
 
 /**
- * Função para atualizar a mensagem de hierarquia no canal
+ * Atualiza a mensagem visual da Hierarquia
  */
-async function updateHierarchyMessage(guild) {
-  const channel = guild.channels.cache.get(HIERARCHY_CHANNEL_ID);
-  if (!channel) return;
+async function syncHierarchy(guild) {
+  try {
+    const channel = await guild.channels.fetch(CONFIG.HIERARCHY_CHANNEL).catch(() => null);
+    if (!channel) return;
 
-  // Busca todos os membros para garantir dados atualizados
-  await guild.members.fetch();
+    await guild.members.fetch(); // Garante que o bot veja todos os membros
 
-  const rolesData = [
-    { label: 'Líder', title: 'LÍDERES', icon: '👑' },
-    { label: 'Gerente', title: 'GERENTES', icon: '🛡️' },
-    { label: 'Elite', title: 'ELITE', icon: '⚡' },
-    { label: 'Membro', title: 'MEMBROS', icon: '⚔️' },
-    { label: 'Recruta', title: 'RECRUTAS', icon: '🔰' },
-  ];
+    let text = `╔══════════════════════════════════════╗\n`;
+    text += `           🐺👑 H U N T E R S 👑🐺\n`;
+    text += `        『 HIERARQUIA OFICIAL 』\n`;
+    text += `╚══════════════════════════════════════╝\n\n`;
 
-  let text = `╔══════════════════════════════════════╗\n`;
-  text += `           🐺👑 H U N T E R S 👑🐺\n`;
-  text += `        『 HIERARQUIA OFICIAL 』\n`;
-  text += `╚══════════════════════════════════════╝\n\n`;
+    // Filtra IDs válidos e ordena por prioridade
+    const sortedRoles = Object.entries(FACTION_ROLES)
+      .filter(([id]) => id && id !== "undefined")
+      .sort((a, b) => a[1].priority - b[1].priority);
 
-  rolesData.forEach(roleInfo => {
-    // Encontra todos os membros que têm esse cargo específico
-    const membersWithRole = guild.members.cache.filter(m => {
-        // Verifica se o ID do cargo daquela hierarquia está nos cargos do membro
-        const roleId = Object.keys(FACTION_ROLES).find(id => FACTION_ROLES[id].name === roleInfo.label);
-        return m.roles.cache.has(roleId);
-    });
+    for (const [roleId, info] of sortedRoles) {
+      const membersWithRole = guild.members.cache.filter(m => m.roles.cache.has(roleId));
+      const count = String(membersWithRole.size).padStart(2, '0');
 
-    const count = String(membersWithRole.size).padStart(2, '0');
-    text += `${roleInfo.icon} ╭─ ${roleInfo.title} 「${count}」\n`;
-
-    if (membersWithRole.size > 0) {
-      membersWithRole.forEach(m => {
-        const displayName = m.nickname || m.user.globalName || m.user.username;
-        text += `┃ ➤ ${displayName}\n`;
-      });
-    } else {
-      text += `┃ ➤ _Vago_\n`;
+      text += `${info.icon} ╭─ ${info.name.toUpperCase()} 「${count}」\n`;
+      if (membersWithRole.size > 0) {
+        membersWithRole.forEach(m => {
+          const name = m.nickname || m.user.globalName || m.user.username;
+          text += `┃ ➤ ${name}\n`;
+        });
+      } else {
+        text += `┃ ➤ _Vago_\n`;
+      }
+      text += `╰────────────────────────────\n\n`;
     }
-    text += `╰────────────────────────────\n\n`;
-  });
 
-  const embed = new EmbedBuilder()
-    .setColor(0xF59E0B)
-    .setDescription(text)
-    .setImage(BANNER_URL)
-    .setTimestamp()
-    .setFooter({ text: 'Sincronização Automática HUNTERS' });
+    const embed = new EmbedBuilder()
+      .setColor(0xF59E0B)
+      .setDescription(text)
+      .setImage(CONFIG.BANNER)
+      .setTimestamp();
 
-  // Busca mensagens antigas do bot no canal para editar em vez de criar nova
-  const messages = await channel.messages.fetch({ limit: 10 });
-  const oldMsg = messages.find(msg => msg.author.id === client.user.id);
+    const messages = await channel.messages.fetch({ limit: 10 }).catch(() => null);
+    const botMsg = messages?.find(msg => msg.author.id === client.user.id);
 
-  if (oldMsg) {
-    await oldMsg.edit({ embeds: [embed] });
-  } else {
-    await channel.send({ embeds: [embed] });
+    if (botMsg) await botMsg.edit({ embeds: [embed] });
+    else await channel.send({ embeds: [embed] });
+
+  } catch (err) {
+    console.error("Erro ao sincronizar hierarquia:", err.message);
   }
 }
 
-// EVENTO: Quando o bot liga
-client.once('ready', async () => {
-  console.log(`✅ Bot ${client.user.tag} está online!`);
-
-  const guild = client.guilds.cache.get(GUILD_ID);
-  if (guild) await updateHierarchyMessage(guild);
-});
-
-// EVENTO PRINCIPAL: Monitora mudança de cargos
+// EVENTO: Quando um cargo é alterado
 client.on('guildMemberUpdate', async (oldMember, newMember) => {
   const guild = newMember.guild;
-  
-  // IDs dos cargos de hierarquia configurados
-  const hierarchyRoleIds = Object.keys(FACTION_ROLES);
+  const factionRoleIds = Object.keys(FACTION_ROLES).filter(id => id && id !== "undefined");
 
-  // Verifica se o membro tem algum cargo de hierarquia agora
-  const hasHierarchyNow = hierarchyRoleIds.some(id => newMember.roles.cache.has(id));
-  // Verifica se o membro tinha algum cargo de hierarquia antes
-  const hadHierarchyBefore = hierarchyRoleIds.some(id => oldMember.roles.cache.has(id));
+  const hadHierarchy = factionRoleIds.some(id => oldMember.roles.cache.has(id));
+  const hasHierarchy = factionRoleIds.some(id => newMember.roles.cache.has(id));
 
-  // CASO 1: O cargo de hierarquia foi REMOVIDO
-  if (hadHierarchyBefore && !hasHierarchyNow) {
-    // Se ele ainda tiver a TAG, nós removemos
-    if (newMember.roles.cache.has(TAG_ROLE_ID)) {
+  // --- REGRA: SE PERDEU TODOS OS CARGOS DE HIERARQUIA, REMOVE A TAG ---
+  if (hadHierarchy && !hasHierarchy) {
+    if (newMember.roles.cache.has(CONFIG.TAG_ROLE_ID)) {
       try {
-        await newMember.roles.remove(TAG_ROLE_ID);
+        await newMember.roles.remove(CONFIG.TAG_ROLE_ID);
         
-        // Log de remoção
-        const logChan = guild.channels.cache.get(LOG_CHANNEL_ID);
+        // Log de segurança
+        const logChan = guild.channels.cache.get(CONFIG.LOG_CHANNEL);
         if (logChan) {
           logChan.send({
             embeds: [new EmbedBuilder()
-              .setTitle("⚠️ Tag Removida")
-              .setDescription(`O membro **${newMember.user.tag}** perdeu seu cargo de facção, portanto a TAG foi removida automaticamente.`)
+              .setTitle("🚫 Tag Removida Automaticamente")
+              .setDescription(`O membro **${newMember.user.tag}** não possui mais cargos da HUNTERS. A Tag foi retirada.`)
               .setColor(0xEF4444)
               .setTimestamp()]
           });
         }
-      } catch (err) {
-        console.error(`Erro ao remover tag de ${newMember.user.tag}: Cargo do bot está abaixo do cargo da tag.`);
+      } catch (e) {
+        console.error("Erro ao remover tag: Verifique se o cargo do bot está no topo.");
       }
     }
   }
 
-  // CASO 2: O cargo de hierarquia foi ADICIONADO
-  if (!hadHierarchyBefore && hasHierarchyNow) {
-    // Se ele não tiver a TAG, nós adicionamos
-    if (!newMember.roles.cache.has(TAG_ROLE_ID)) {
-      await newMember.roles.add(TAG_ROLE_ID).catch(() => null);
+  // --- REGRA: SE GANHOU UM CARGO DE HIERARQUIA, ADICIONA A TAG ---
+  if (!hadHierarchy && hasHierarchy) {
+    if (!newMember.roles.cache.has(CONFIG.TAG_ROLE_ID)) {
+      await newMember.roles.add(CONFIG.TAG_ROLE_ID).catch(() => null);
     }
   }
 
-  // Atualiza a lista visual independente do que aconteceu
-  if (hadHierarchyBefore !== hasHierarchyNow) {
-    await updateHierarchyMessage(guild);
+  // Atualiza a lista visual
+  if (hadHierarchy !== hasHierarchy) {
+    await syncHierarchy(guild);
   }
 });
 
-// Evento para quando alguém sai do servidor
-client.on('guildMemberRemove', async member => {
-  await updateHierarchyMessage(member.guild);
+client.once('ready', async () => {
+  console.log(`✅ Bot Hunters conectado como ${client.user.tag}`);
+  const guild = client.guilds.cache.get(CONFIG.GUILD_ID);
+  if (guild) syncHierarchy(guild);
 });
 
-client.login(TOKEN);
+client.login(CONFIG.TOKEN).catch(err => console.error("Erro de Token:", err.message));
+
+// Evita que o bot caia por erros inesperados
+process.on('unhandledRejection', e => console.error('Erro Crítico:', e));
